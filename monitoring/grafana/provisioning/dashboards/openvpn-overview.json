@@ -1,0 +1,58 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Connected Clients",
+      "targets": [
+        {
+          "expr": "openvpn_connected_clients",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 }
+    },
+    {
+      "type": "graph",
+      "title": "Bytes In",
+      "targets": [
+        {
+          "expr": "rate(openvpn_server_bytes_in_total[2m])",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }
+    },
+    {
+      "type": "graph",
+      "title": "Bytes Out",
+      "targets": [
+        {
+          "expr": "rate(openvpn_server_bytes_out_total[2m])",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["openvpn"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "",
+  "title": "OpenVPN Overview",
+  "uid": "openvpn-overview",
+  "version": 1,
+  "weekStart": ""
+}
+
+

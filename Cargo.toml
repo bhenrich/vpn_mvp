@@ -1,0 +1,11 @@
+[workspace]
+members = [
+	"client/vpn-core",
+	"client/platform-windows",
+	"client/platform-macos",
+	"client/platform-linux",
+	"client/vpn-gui",
+]
+resolver = "2"
+
+

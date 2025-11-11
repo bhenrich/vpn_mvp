@@ -1,0 +1,57 @@
+# Global ignores
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.idea/
+.vscode/
+*.code-workspace
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+/target/
+**/target/
+**/bin/
+**/obj/
+**/dist/
+**/build/
+**/out/
+**/coverage/
+
+# Rust
+**/*.rs.bk
+
+# Go
+**/*.test
+
+# .NET
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log.*
+
+# Docker artifacts
+**/.env.docker
+
+# Monitoring data
+monitoring/grafana/data/
+
+

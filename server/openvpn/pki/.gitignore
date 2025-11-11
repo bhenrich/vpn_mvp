@@ -1,0 +1,5 @@
+# Ignore generated PKI assets by default
+*
+!.gitignore
+!.gitkeep
+
