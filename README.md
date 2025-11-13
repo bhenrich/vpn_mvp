@@ -1,3 +1,7 @@
+Monorepo refactor in progress (see `PLAN.md`)
+---------------------------------------------
+This repository is transitioning to a WireGuard-based VPN MVP with a Python control-plane and Rust data-plane. New monorepo structure, compose stack, and CI are being scaffolded; legacy IKEv2 client details below are being superseded.
+
 Rust IKEv2 VPN Client (GUI MVP)
 ================================
 

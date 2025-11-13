@@ -4,7 +4,10 @@ members = [
 	"client/platform-windows",
 	"client/platform-macos",
 	"client/platform-linux",
-	"client/vpn-gui",
+	"client/vpn-cli",
+	"clients/desktop/ui/src-tauri",
+	"clients/desktop/service",
+	"nodes/agent",
 ]
 resolver = "2"
 

@@ -1,0 +1,24 @@
+[package]
+name = "desktop-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+vpn_core = { package = "vpn-core", path = "../../../client/vpn-core" }
+dirs-next = "2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+platform_windows = { package = "platform-windows", path = "../../../client/platform-windows" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+platform_macos = { package = "platform-macos", path = "../../../client/platform-macos" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+platform_linux = { package = "platform-linux", path = "../../../client/platform-linux" }
+
+

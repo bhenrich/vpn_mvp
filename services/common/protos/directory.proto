@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package directory.v1;
+
+option go_package = "github.com/example/vpn_mvp/services/common/protos/directory/v1;directoryv1";
+
+message NodeIdentity {
+  string public_key = 1;       // WireGuard public key (base64/base32 as agreed)
+  string agent_version = 2;
+  string wg_rs_version = 3;
+}
+
+message NodeRegistrationRequest {
+  NodeIdentity identity = 1;
+  string region_id = 2;         // UUID string
+  string internal_wg_ip = 3;    // CIDR or IP
+  repeated string egress_ips = 4;
+  map<string, string> capabilities = 5;
+}
+
+message NodeRegistrationResponse {
+  string node_id = 1;           // UUID string
+  string status = 2;            // registered/denied/etc
+}
+
+message HeartbeatRequest {
+  NodeIdentity identity = 1;
+  string status = 2;            // online/offline/draining/unknown
+}
+
+message HeartbeatResponse {
+  string node_id = 1;
+  string status = 2;
+}
+
+message ConfigUpdate {
+  string node_id = 1;
+  bytes wg_config = 2;          // serialized WG config or specific delta format
+  int64 revision = 3;
+}
+
+service DirectoryService {
+  rpc Register(NodeRegistrationRequest) returns (NodeRegistrationResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc StreamConfig(NodeIdentity) returns (stream ConfigUpdate);
+}
+
+

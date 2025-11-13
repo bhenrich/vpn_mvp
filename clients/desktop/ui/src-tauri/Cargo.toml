@@ -1,0 +1,36 @@
+[package]
+name = "desktop-ui"
+version = "0.1.0"
+description = "Desktop UI for VPN MVP (Tauri)"
+authors = ["VPN MVP"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["dialog-all", "fs-all", "os-all", "shell-all", "updater"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "sync"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+rand = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+dirs-next = "2"
+anyhow = "1"
+vpn_core = { package = "vpn-core", path = "../../../../client/vpn-core" }
+
+# Platform adapters (compiled conditionally)
+[target.'cfg(target_os = "windows")'.dependencies]
+platform_windows = { package = "platform-windows", path = "../../../../client/platform-windows" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+platform_macos = { package = "platform-macos", path = "../../../../client/platform-macos" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+platform_linux = { package = "platform-linux", path = "../../../../client/platform-linux" }
+
+[features]
+default = []
+

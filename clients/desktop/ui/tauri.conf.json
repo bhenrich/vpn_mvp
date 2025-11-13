@@ -1,0 +1,74 @@
+{
+  "package": {
+    "productName": "VPN MVP",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "windows": [
+      {
+        "title": "VPN",
+        "width": 960,
+        "height": 640,
+        "resizable": true
+      }
+    ],
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.vpnmvp.app",
+      "icon": [],
+      "resources": [],
+      "externalBin": ["../../service/target/release/desktop-service"],
+      "copyright": "",
+      "category": "Network",
+      "shortDescription": "Privacy-first VPN",
+      "longDescription": "Desktop UI for VPN MVP",
+      "windows": {
+        "wix": {
+          "language": "en-US"
+        },
+        "webviewFixedRuntimePath": null
+      },
+      "deb": {
+        "depends": ["libgtk-3-0", "libayatana-appindicator3-1", "libwebkit2gtk-4.0-37"]
+      },
+      "macOS": {
+        "minimumSystemVersion": "10.15",
+        "entitlements": null,
+        "exceptionDomain": null,
+        "signingIdentity": null
+      }
+    },
+    "updater": {
+      "active": false,
+      "endpoints": [],
+      "dialog": true,
+      "pubkey": null
+    },
+    "security": {
+      "csp": null
+    },
+    "allowlist": {
+      "shell": {
+        "all": true
+      },
+      "fs": {
+        "all": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "os": {
+        "all": true
+      }
+    }
+  },
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "src",
+    "devPath": "src"
+  }
+}
+
+

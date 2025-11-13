@@ -20,6 +20,11 @@ impl WindowsAdapter {
 	}
 }
 
+pub mod tun_backend;
+pub mod dns;
+pub mod firewall;
+pub mod split;
+
 #[async_trait::async_trait]
 impl VpnAdapter for WindowsAdapter {
 	async fn init(&self) -> Result<(), CoreError> {

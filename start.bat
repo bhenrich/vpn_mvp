@@ -39,22 +39,26 @@ if errorlevel 1 (
 REM Set client env vars for this session
 set AUTH_BASE_URL=http://localhost:8080
 
-REM Build client
-echo Building client...
-dotnet build client\VpnClient.sln -c Debug
+REM Build Rust client (workspace including GUI)
+echo Building Rust client...
+cargo build --workspace
 if errorlevel 1 (
-  echo Build failed.
+  echo Rust build failed.
   goto :eof
 )
 
-REM Run client WinForms app
-set CLIENT_EXE=client\App\bin\Debug\net8.0-windows\App.exe
+REM Find path to built vpn-gui executable (Debug build by default)
+set CLIENT_EXE=target\debug\vpn-gui.exe
 if not exist "%CLIENT_EXE%" (
-  echo Client executable not found at %CLIENT_EXE%.
-  goto :eof
+  REM Try release build if debug doesn't exist
+  set CLIENT_EXE=target\release\vpn-gui.exe
+  if not exist "%CLIENT_EXE%" (
+    echo VPN GUI executable not found in target\debug or target\release.
+    goto :eof
+  )
 )
 
-echo Launching client...
+echo Launching Rust VPN client GUI...
 start "VPN Client" "%CLIENT_EXE%"
 
 echo Done.

@@ -1,79 +1,163 @@
+version: "3.9"
 services:
   postgres:
     image: postgres:16
     environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_DB=${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-example}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      retries: 10
     ports:
       - "5432:5432"
 
-  auth:
-    build: ./server/auth
-    environment:
-      - POSTGRES_DSN=${POSTGRES_DSN}
-      - JWT_SIGNING_KEY=${JWT_SIGNING_KEY}
-      - OVPN_REMOTE=${OVPN_REMOTE}
-      - OVPN_PORT=${OVPN_PORT}
-      - OVPN_PROTO=${OVPN_PROTO}
-      - SEED_TEST_USER=true
-      - TEST_USER_EMAIL=${TEST_USER_EMAIL}
-      - TEST_USER_PASSWORD=${TEST_USER_PASSWORD}
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  auth-api:
+    build:
+      context: .
+      dockerfile: ./services/auth-api/Dockerfile
+    env_file: ./services/auth-api/.env
     depends_on:
       - postgres
+      - redis
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8080/healthz')).get('status')=='ok' else 1)"]
+      interval: 5s
+      retries: 10
 
-  openvpn:
-    build: ./server/openvpn
-    cap_add:
-      - NET_ADMIN
-    environment:
-      - AUTH_HOST=http://auth:8080
+  directory-api:
+    build:
+      context: .
+      dockerfile: ./services/directory-api/Dockerfile
+    env_file: ./services/directory-api/.env
+    depends_on:
+      - postgres
+      - redis
+      - auth-api
     ports:
-      - "1194:1194/udp"
+      - "8081:8081"
+      - "50051:50051"
+    environment:
+      - GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-0}
+      - GRPC_TLS_CERT_PATH=/certs/directory.crt
+      - GRPC_TLS_KEY_PATH=/certs/directory.key
+      - GRPC_TLS_CLIENT_CA_PATH=/certs/ca.crt
     volumes:
-      - openvpn-status:/etc/openvpn/status
-      - ./server/openvpn/pki:/etc/openvpn/pki:ro
+      - ./tools/pki/dev:/certs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8081/healthz')).get('status')=='ok' else 1)"]
+      interval: 5s
+      retries: 10
+
+  admin-api:
+    build:
+      context: .
+      dockerfile: ./services/admin-api/Dockerfile
+    env_file: ./services/admin-api/.env
+    depends_on:
+      - auth-api
+      - directory-api
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8082/healthz')).get('status')=='ok' else 1)"]
+      interval: 5s
+      retries: 10
+
+  node-agent:
+    build: ./nodes/agent
+    cap_add: ["NET_ADMIN", "SYS_MODULE"]
+    tmpfs:
+      - /etc/wireguard:rw,noexec,nosuid,nodev,mode=0700
+      - /var/run/vpn:rw,noexec,nosuid,nodev,mode=0700
+    depends_on:
+      - directory-api
+    ports:
+      - "51820:51820/udp"
+    environment:
+      - MTLS_ENABLED=${MTLS_ENABLED:-0}
+      - MTLS_CA_CERT_PATH=/certs/ca.crt
+      - MTLS_CLIENT_CERT_PATH=/certs/node.crt
+      - MTLS_CLIENT_KEY_PATH=/certs/node.key
+      - DIRECTORY_ADDR=${DIRECTORY_ADDR:-http://directory-api:50051}
+      - WG_STATIC=${WG_STATIC:-1}
+      - WG_LISTEN_PORT=${WG_LISTEN_PORT:-51820}
+      # Optionally set WG_CLIENT_PUBKEY to pre-authorize a laptop key
+      - WG_CLIENT_PUBKEY=${WG_CLIENT_PUBKEY:-}
+    volumes:
+      - ./tools/pki/dev:/certs:ro
+      - ./tools/wg:/wg
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.53.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/rules:/etc/prometheus/rules:ro
+      - ./ops/runbooks:/runbooks:ro
+      - promdata:/prometheus
     ports:
       - "9090:9090"
-
-  openvpn_exporter:
-    image: kumina/openvpn-exporter
-    command: ["--openvpn.status_paths=/status/status.log"]
-    volumes:
-      - openvpn-status:/status:ro
-    ports:
-      - "9176:9176"
-
-  postgres_exporter:
-    image: prometheuscommunity/postgres-exporter
-    environment:
-      - DATA_SOURCE_NAME=${POSTGRES_DSN}
-    ports:
-      - "9187:9187"
+    depends_on:
+      - auth-api
+      - directory-api
+      - admin-api
+      - alertmanager
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.0.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./ops/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./ops/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
-    volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - jaeger
 
-  node_exporter:
-    image: prom/node-exporter:v1.8.1
-    command:
-      - '--collector.disable-defaults=false'
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
     ports:
-      - "9100:9100"
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./ops/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
 
 volumes:
   pgdata:
-  openvpn-status:
+  promdata:
+  grafana-data:
