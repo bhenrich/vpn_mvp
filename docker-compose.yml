@@ -67,6 +67,13 @@ services:
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
 
+  node_exporter:
+    image: prom/node-exporter:v1.8.1
+    command:
+      - '--collector.disable-defaults=false'
+    ports:
+      - "9100:9100"
+
 volumes:
   pgdata:
   openvpn-status:
