@@ -259,19 +259,10 @@ saveRegionBtn.addEventListener("click", async () => {
 
 bgStartBtn.addEventListener("click", async () => {
 	try {
-		let healthy = await invoke<boolean>("daemon_health");
-		if (!healthy) {
-			await invoke("daemon_spawn");
-			// brief wait then re-check
-			await new Promise(r => setTimeout(r, 500));
-			healthy = await invoke<boolean>("daemon_health");
-		}
-		if (!healthy) {
-			alert("Failed to start background service");
-			return;
-		}
 		const profileName = "default";
-		await invoke("daemon_start_autoconnect", {
+		// Start background autoconnect loop directly inside the Tauri process,
+		// instead of going through the separate desktop-service sidecar.
+		await invoke("start_autoconnect", {
 			args: {
 				profile: profileName,
 				iface: null as any,
@@ -288,7 +279,8 @@ bgStartBtn.addEventListener("click", async () => {
 
 bgStopBtn.addEventListener("click", async () => {
 	try {
-		await invoke("daemon_stop_autoconnect");
+		// Stop the in-process background autoconnect loop.
+		await invoke("stop_autoconnect");
 		await refreshAppStatus();
 	} catch (e: any) {
 		alert(`Failed to stop background: ${e}`);
