@@ -43,6 +43,17 @@
 
 	<section id="login" class="card hidden">
 		<h2>Login</h2>
+		<div class="card" style="margin: 0 0 16px 0; padding: 12px; background: #f7f9fc;">
+			<h3>Server</h3>
+			<label for="server-host">Server address</label>
+			<input id="server-host" type="text" placeholder="192.168.0.10" />
+			<p style="font-size: 12px; color: #555; margin-top: 4px;">
+				Enter the IP or hostname of the machine running the VPN backend (auth + directory APIs).
+				Leave empty to use the default <code>127.0.0.1</code> on this device.
+			</p>
+			<br />
+			<button id="server-save">Save server</button>
+		</div>
 		<div class="row">
 			<div>
 				<h3>Direct login</h3>

@@ -15,10 +15,15 @@ use tokio::sync::Mutex;
 use tokio::{sync::oneshot, task::JoinHandle};
 use tauri::api::process::Command as TauriCommand;
 
-#[derive(Clone, Debug)]
-struct AppState {
+#[derive(Debug)]
+struct ServerConfig {
     base_auth_url: String,
     base_directory_url: String,
+}
+
+#[derive(Clone, Debug)]
+struct AppState {
+    server: Arc<Mutex<ServerConfig>>,
     token_store: Arc<Mutex<Option<TokenResponse>>>,
     bg: Arc<Mutex<BackgroundService>>,
 }
@@ -26,13 +31,50 @@ struct AppState {
 impl AppState {
     fn new() -> Self {
         // Default dev URLs; can be overridden via env at runtime if needed
+        let base_auth_url = std::env::var("VPN_AUTH_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+        let base_directory_url = std::env::var("VPN_DIRECTORY_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
         Self {
-            base_auth_url: std::env::var("VPN_AUTH_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string()),
-            base_directory_url: std::env::var("VPN_DIRECTORY_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string()),
+            server: Arc::new(Mutex::new(ServerConfig {
+                base_auth_url,
+                base_directory_url,
+            })),
             token_store: Arc::new(Mutex::new(None)),
             bg: Arc::new(Mutex::new(BackgroundService::new())),
         }
     }
+}
+
+#[tauri::command]
+async fn set_server_host(host: String, state: State<'_, AppState>) -> Result<(), String> {
+    let trimmed = host.trim();
+    if trimmed.is_empty() {
+        return Err("host cannot be empty".to_string());
+    }
+
+    // Strip scheme if provided
+    let without_scheme = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or(trimmed);
+
+    // Take hostname/IP part before any port or path
+    let host_part = without_scheme
+        .split(&['/', ':'][..])
+        .next()
+        .ok_or_else(|| "invalid host".to_string())?;
+
+    if host_part.is_empty() {
+        return Err("invalid host".to_string());
+    }
+
+    let base_auth_url = format!("http://{}:8080", host_part);
+    let base_directory_url = format!("http://{}:8081", host_part);
+
+    let mut server = state.server.lock().await;
+    server.base_auth_url = base_auth_url;
+    server.base_directory_url = base_directory_url;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +144,11 @@ struct MeshPathResponse {
 
 #[tauri::command]
 async fn login(req: LoginRequest, state: State<'_, AppState>) -> Result<TokenResponse, String> {
-    let url = format!("{}/auth/login", state.base_auth_url);
+    let base_auth_url = {
+        let server = state.server.lock().await;
+        server.base_auth_url.clone()
+    };
+    let url = format!("{}/auth/login", base_auth_url);
     let client = reqwest::Client::new();
     let resp = client
         .post(url)
@@ -153,7 +199,11 @@ async fn device_login_start(user_hint: Option<String>, state: State<'_, AppState
         code_challenge: challenge.clone(),
         user_hint,
     };
-    let url = format!("{}/auth/device/start", state.base_auth_url);
+    let base_auth_url = {
+        let server = state.server.lock().await;
+        server.base_auth_url.clone()
+    };
+    let url = format!("{}/auth/device/start", base_auth_url);
     let client = reqwest::Client::new();
     let resp = client
         .post(url)
@@ -177,7 +227,11 @@ async fn device_login_start(user_hint: Option<String>, state: State<'_, AppState
 
 #[tauri::command]
 async fn device_login_poll(device_code: String, code_verifier: String, state: State<'_, AppState>) -> Result<TokenResponse, String> {
-    let url = format!("{}/auth/device/poll", state.base_auth_url);
+    let base_auth_url = {
+        let server = state.server.lock().await;
+        server.base_auth_url.clone()
+    };
+    let url = format!("{}/auth/device/poll", base_auth_url);
     let client = reqwest::Client::new();
     let payload = DeviceLoginPollRequest {
         device_code,
@@ -199,7 +253,11 @@ async fn device_login_poll(device_code: String, code_verifier: String, state: St
 
 #[tauri::command]
 async fn fetch_regions(state: State<'_, AppState>) -> Result<Vec<Region>, String> {
-    let url = format!("{}/regions", state.base_directory_url);
+    let base_directory_url = {
+        let server = state.server.lock().await;
+        server.base_directory_url.clone()
+    };
+    let url = format!("{}/regions", base_directory_url);
     let client = reqwest::Client::new();
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
@@ -229,7 +287,11 @@ async fn validate_mesh_selection(region_id: String, mode: String, state: State<'
         .access_token.clone();
     drop(token_store);
 
-    let url = format!("{}/mesh/path", state.base_directory_url);
+    let base_directory_url = {
+        let server = state.server.lock().await;
+        server.base_directory_url.clone()
+    };
+    let url = format!("{}/mesh/path", base_directory_url);
     let client = reqwest::Client::new();
     let payload = MeshPathRequest { region_id, mode };
     let resp = client
@@ -565,6 +627,7 @@ fn main() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             login,
+            set_server_host,
             device_login_start,
             device_login_poll,
             fetch_regions,

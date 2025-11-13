@@ -41,6 +41,9 @@ const loginEl = $("login") as HTMLElement;
 const regionsEl = $("regions") as HTMLElement;
 const statusEl = $("status") as HTMLElement;
 
+const serverHostInput = $("server-host") as HTMLInputElement;
+const serverSaveBtn = $("server-save") as HTMLButtonElement;
+
 const telemetryToggle = $("telemetry-consent") as HTMLInputElement;
 const onboardingContinue = $("onboarding-continue") as HTMLButtonElement;
 const loginSubmit = $("login-submit") as HTMLButtonElement;
@@ -62,6 +65,21 @@ let deviceState: DeviceStartOut | null = null;
 let selectedRegion: Region | null = null;
 let selectedMode: "single" | "multi" = "single";
 
+function loadServerHost() {
+	try {
+		const raw = localStorage.getItem("server-host");
+		if (raw && serverHostInput) {
+			serverHostInput.value = raw;
+			// Best-effort push to backend on startup
+			invoke("set_server_host", { host: raw }).catch(() => {
+				// ignore; user can re-save explicitly
+			});
+		}
+	} catch {
+		// ignore
+	}
+}
+
 function loadConsent() {
 	try {
 		const raw = localStorage.getItem("telemetry-consent");
@@ -82,6 +100,31 @@ function saveConsent() {
 		// ignore
 	}
 }
+
+serverSaveBtn.addEventListener("click", async () => {
+	const host = serverHostInput.value.trim();
+	if (!host) {
+		// Clear override and fall back to defaults (env / localhost)
+		try {
+			localStorage.removeItem("server-host");
+		} catch {
+			// ignore
+		}
+		alert("Cleared server override; using default localhost configuration.");
+		return;
+	}
+	try {
+		await invoke("set_server_host", { host });
+		try {
+			localStorage.setItem("server-host", host);
+		} catch {
+			// ignore
+		}
+		alert("Server address saved.");
+	} catch (e: any) {
+		alert(`Failed to save server: ${e}`);
+	}
+});
 
 async function refreshAppStatus() {
 	try {
@@ -253,6 +296,7 @@ bgStopBtn.addEventListener("click", async () => {
 });
 
 async function init() {
+	loadServerHost();
 	loadConsent();
 	await refreshAppStatus();
 	const savedRegionId = localStorage.getItem("selected-region-id");
