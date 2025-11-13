@@ -96,6 +96,7 @@ async fn start_autoconnect(State(state): State<AppState>, Json(args): Json<AutoC
     let ssids = args.trusted_ssids.clone();
     let interval = args.interval;
     let handle = tokio::spawn(async move {
+        let mut rx = rx;
         loop {
             let ssid = current_ssid(&*exec).await.unwrap_or_default();
             let trusted = !ssid.is_empty() && ssids.iter().any(|t| t == &ssid);
@@ -115,7 +116,7 @@ async fn start_autoconnect(State(state): State<AppState>, Json(args): Json<AutoC
             let sleep = tokio::time::sleep(std::time::Duration::from_secs(interval));
             tokio::select! {
                 _ = sleep => {},
-                _ = rx => { break; }
+                _ = &mut rx => { break; }
             }
         }
     });

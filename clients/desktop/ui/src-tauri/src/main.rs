@@ -10,7 +10,7 @@ use base64::Engine as _;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{State, Manager};
+use tauri::State;
 use tokio::sync::Mutex;
 use tokio::{sync::oneshot, task::JoinHandle};
 use tauri::api::process::Command as TauriCommand;
@@ -222,11 +222,19 @@ async fn app_status(state: State<'_, AppState>) -> Result<String, String> {
 
 #[tauri::command]
 async fn validate_mesh_selection(region_id: String, mode: String, state: State<'_, AppState>) -> Result<MeshPathResponse, String> {
+    // Get access token from store
+    let token_store = state.token_store.lock().await;
+    let access_token = token_store.as_ref()
+        .ok_or_else(|| "not authenticated".to_string())?
+        .access_token.clone();
+    drop(token_store);
+
     let url = format!("{}/mesh/path", state.base_directory_url);
     let client = reqwest::Client::new();
     let payload = MeshPathRequest { region_id, mode };
     let resp = client
         .post(url)
+        .bearer_auth(&access_token)
         .json(&payload)
         .send()
         .await
@@ -241,6 +249,7 @@ async fn validate_mesh_selection(region_id: String, mode: String, state: State<'
 // Placeholder for future background service management using platform adapters and CLI-compatible loops.
 // Not exposed yet as a command to avoid half-baked behavior.
 
+#[derive(Debug)]
 struct BackgroundService {
     handle: Option<JoinHandle<()>>,
     stop_tx: Option<oneshot::Sender<()>>,
@@ -303,10 +312,39 @@ async fn start_autoconnect(args: AutoConnectArgs, state: State<'_, AppState>) ->
     let ssids = args.trusted_ssids.clone();
     let interval = args.interval;
     let handle = tokio::spawn(async move {
+        let mut rx = rx;
+        let mut connection_logged = false;
+        let mut last_stats_time = std::time::Instant::now();
         loop {
             let ssid = current_ssid(&*exec).await.unwrap_or_default();
             let trusted = !ssid.is_empty() && ssids.iter().any(|t| t == &ssid);
             let status = adapter.status(&name).await.unwrap_or(vpn_core::ConnectionState::Unknown);
+            
+            // Log connection status changes
+            match status {
+                vpn_core::ConnectionState::Connected => {
+                    if !connection_logged {
+                        println!("[VPN] ✓ Connected to VPN profile: {}", name);
+                        eprintln!("[VPN] Connection established - Windows is now routing traffic through VPN");
+                        connection_logged = true;
+                    }
+                    
+                    // Log packet stats every 5 seconds
+                    if last_stats_time.elapsed().as_secs() >= 5 {
+                        let _ = log_vpn_packet_stats(&*exec, &name).await;
+                        last_stats_time = std::time::Instant::now();
+                    }
+                },
+                vpn_core::ConnectionState::Disconnected => {
+                    if connection_logged {
+                        println!("[VPN] ✗ Disconnected from VPN profile: {}", name);
+                        eprintln!("[VPN] Connection lost - Windows is no longer routing traffic through VPN");
+                        connection_logged = false;
+                    }
+                },
+                _ => {}
+            }
+            
             if trusted {
                 if matches!(status, vpn_core::ConnectionState::Connected | vpn_core::ConnectionState::Connecting) {
                     let _ = adapter.disconnect(&name).await;
@@ -322,7 +360,7 @@ async fn start_autoconnect(args: AutoConnectArgs, state: State<'_, AppState>) ->
             let sleep = tokio::time::sleep(std::time::Duration::from_secs(interval));
             tokio::select! {
                 _ = sleep => {},
-                _ = rx => { break; }
+                _ = &mut rx => { break; }
             }
         }
     });
@@ -383,6 +421,45 @@ async fn current_ssid(exec: &dyn vpn_core::CommandExecutor) -> Result<String, vp
     Ok(String::new())
 }
 
+async fn log_vpn_packet_stats(exec: &dyn vpn_core::CommandExecutor, profile_name: &str) -> Result<(), vpn_core::CoreError> {
+    #[cfg(target_os = "windows")]
+    {
+        // Get VPN adapter stats using PowerShell
+        let script = format!(
+            r#"$vpn = Get-VpnConnection -Name '{}' -ErrorAction SilentlyContinue; if ($vpn) {{ $adapter = Get-NetAdapter | Where-Object {{ $_.InterfaceIndex -eq $vpn.InterfaceIndex }}; if ($adapter) {{ $stats = Get-NetAdapterStatistics -Name $adapter.Name; Write-Host \"[VPN-PACKET] Profile: {} | Bytes RX: $($stats.BytesReceived) | Bytes TX: $($stats.BytesSent) | Packets RX: $($stats.PacketsReceived) | Packets TX: $($stats.PacketsSent)\"; }} else {{ Write-Host \"[VPN-PACKET] No adapter found for profile: {}\"; }} }} else {{ Write-Host \"[VPN-PACKET] VPN connection '{}' not found\"; }}"#,
+            profile_name, profile_name, profile_name, profile_name
+        );
+        let args = ["-NoProfile", "-NonInteractive", "-Command", &script];
+        let out = exec.run("powershell", &args).await?;
+        if out.status == 0 {
+            for line in out.stdout.lines() {
+                if line.contains("[VPN-PACKET]") {
+                    println!("{}", line);
+                    eprintln!("{}", line);
+                }
+            }
+        }
+        
+        // Also check rasdial for connection details
+        let args = ["rasdial", profile_name];
+        let out = exec.run(args[0], &args[1..]).await?;
+        if out.status == 0 && out.stdout.contains("Connected to") {
+            for line in out.stdout.lines() {
+                if line.contains("Bytes") || line.contains("packet") || line.contains("error") || line.contains("Error") {
+                    println!("[VPN-PACKET] {} - {}", profile_name, line.trim());
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // For other platforms, use similar approach
+        let _ = exec;
+        let _ = profile_name;
+    }
+    Ok(())
+}
+
 async fn set_mtu(exec: &dyn vpn_core::CommandExecutor, iface: &str, mtu: u32) -> Result<(), vpn_core::CoreError> {
     #[cfg(target_os = "windows")]
     {
@@ -426,7 +503,10 @@ async fn daemon_spawn() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     // detach child; listen in background for exit without blocking
     tauri::async_runtime::spawn(async move {
-        let _ = rx.await;
+        let mut rx = rx;
+        while let Some(_event) = rx.recv().await {
+            // drain events to keep the channel from filling
+        }
         let _ = child;
     });
     Ok(())
@@ -464,9 +544,20 @@ async fn daemon_stop_autoconnect() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "updater")]
 #[tauri::command]
 async fn update_check(app: tauri::AppHandle) -> Result<(), String> {
-    app.updater().check().await.map_err(|e| e.to_string())
+    app.updater()
+        .check()
+        .await
+        .map(|_resp| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "updater"))]
+#[tauri::command]
+async fn update_check(_app: tauri::AppHandle) -> Result<(), String> {
+    Ok(())
 }
 
 fn main() {

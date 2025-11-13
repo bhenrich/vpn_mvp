@@ -5,6 +5,8 @@ members = [
 	"client/platform-macos",
 	"client/platform-linux",
 	"client/vpn-cli",
+	"client/vpn-gui",
+	"clients/desktop/core",
 	"clients/desktop/ui/src-tauri",
 	"clients/desktop/service",
 	"nodes/agent",

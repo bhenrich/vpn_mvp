@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
-echo "starting unbound DNS (DoT) on :5353"
+echo "enabling IPv4 forwarding"
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+echo "starting unbound DNS (DoT) on :53"
 unbound -c /etc/unbound/unbound.conf &
 if [ "${RUN_NFT_SETUP:-0}" = "1" ]; then
 	echo "applying nftables rules"
@@ -39,12 +41,19 @@ if [ "${WG_STATIC:-0}" = "1" ]; then
 	# Basic NAT for egress if nftables rules not applied
 	if [ "${RUN_NFT_SETUP:-0}" != "1" ]; then
 		EXT_IFACE="${EXT_IFACE:-eth0}"
-		echo "enabling simple MASQUERADE on $EXT_IFACE via nftables"
-		nft -f - <<'EOF' || true
+		echo "enabling forwarding and MASQUERADE between wg0 <$EXT_IFACE> via nftables"
+		nft -f - <<EOF || true
+table inet filter {
+	chain forward {
+		type filter hook forward priority 0;
+		iifname "wg0" oifname "$EXT_IFACE" accept
+		iifname "$EXT_IFACE" oifname "wg0" ct state related,established accept
+	}
+}
 table ip nat {
 	chain postrouting {
 		type nat hook postrouting priority srcnat;
-		oifname "eth0" masquerade
+		oifname "$EXT_IFACE" masquerade
 	}
 }
 EOF

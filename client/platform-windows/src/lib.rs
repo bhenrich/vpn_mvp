@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use vpn_core::{
-	AuthMethod, CommandExecutor, ConnectionState, CoreError, CredentialStore, ProfileStore, SplitTunnel, VpnAdapter,
+		AuthMethod, CommandExecutor, ConnectionState, CoreError, CredentialStore, ProfileStore, VpnAdapter,
 	VpnProfile,
 };
 
@@ -68,7 +68,9 @@ impl VpnAdapter for WindowsAdapter {
 	}
 
 	async fn connect(&self, name: &str) -> Result<(), CoreError> {
+		println!("[VPN] Attempting to connect to profile: {}", name);
 		let profile = self.profiles.load(name).await?;
+		println!("[VPN] Loaded profile - Server: {}", profile.server);
 		let (username, password) = match &profile.auth {
 			AuthMethod::EapMsChapV2 { username } => {
 				let user = username.clone().ok_or_else(|| CoreError::InvalidInput("username missing".into()))?;
@@ -88,26 +90,76 @@ impl VpnAdapter for WindowsAdapter {
 		let args = ["-NoProfile", "-NonInteractive", "-Command", "exit (rasdial)"];
 		let _ = self.exec.run("powershell", &args).await?; // ensure rasdial exists
 
+		println!("[VPN] Connecting via rasdial to: {} (user: {})", name, username);
 		let args = ["rasdial", name, &username, &password];
 		let out = self.exec.run(args[0], &args[1..]).await?;
 		if out.status != 0 {
+			eprintln!("[VPN] Connection failed - Status: {}, Error: {}", out.status, out.stderr);
 			return Err(CoreError::CommandFailed(out.stderr));
 		}
+		println!("[VPN] ✓ Connection established successfully to: {} ({}:{})", name, profile.server, profile.server.split(':').nth(1).unwrap_or(""));
+		eprintln!("[VPN] Connection output: {}", out.stdout);
 		Ok(())
 	}
 
 	async fn disconnect(&self, name: &str) -> Result<(), CoreError> {
+		println!("[VPN] Disconnecting from profile: {}", name);
 		let args = ["rasdial", name, "/disconnect"];
 		let out = self.exec.run(args[0], &args[1..]).await?;
 		if out.status != 0 {
+			eprintln!("[VPN] Disconnect failed - Status: {}, Error: {}", out.status, out.stderr);
 			return Err(CoreError::CommandFailed(out.stderr));
 		}
+		println!("[VPN] ✓ Disconnected from: {}", name);
 		Ok(())
 	}
 
-	async fn status(&self, _name: &str) -> Result<ConnectionState, CoreError> {
-		// Minimal MVP: cannot easily query per-connection via rasdial; report Unknown.
-		Ok(ConnectionState::Unknown)
+	async fn status(&self, name: &str) -> Result<ConnectionState, CoreError> {
+		// Check connection status via rasdial
+		let args = ["rasdial", name];
+		let out = self.exec.run(args[0], &args[1..]).await?;
+		
+		// rasdial returns 0 if connected, non-zero if disconnected/error
+		if out.status == 0 && out.stdout.contains("Connected to") {
+			// Parse connection info and log packet stats
+			let _ = WindowsAdapter::log_packet_stats(&self.exec, name).await;
+			return Ok(ConnectionState::Connected);
+		}
+		Ok(ConnectionState::Disconnected)
+	}
+}
+
+impl WindowsAdapter {
+	async fn log_packet_stats(exec: &Arc<dyn CommandExecutor>, name: &str) -> Result<(), CoreError> {
+		// Get VPN adapter interface stats using PowerShell
+		let script = format!(
+			r#"Get-NetAdapter | Where-Object {{ $_.InterfaceDescription -like '*{}*' -or $_.Name -like '*{}*' }} | Get-NetAdapterStatistics | Select-Object -Property Name, BytesReceived, BytesSent, PacketsReceived, PacketsSent | ConvertTo-Json"#,
+			name, name
+		);
+		let args = ["-NoProfile", "-NonInteractive", "-Command", &script];
+		let out = exec.run("powershell", &args).await?;
+		
+		if out.status == 0 && !out.stdout.trim().is_empty() {
+			// Try to parse and log stats
+			let stats = out.stdout.trim();
+			if !stats.contains("null") && stats.len() > 10 {
+				println!("[VPN] Packet stats for {}: {}", name, stats);
+			}
+		}
+		
+		// Also check rasdial status for connection info
+		let args = ["rasdial", name];
+		let out = exec.run(args[0], &args[1..]).await?;
+		if out.status == 0 && out.stdout.contains("Connected to") {
+			// Extract connection details from rasdial output
+			let lines: Vec<&str> = out.stdout.lines().collect();
+			for line in lines {
+				if line.contains("Bytes") || line.contains("Compression") || line.contains("Errors") {
+					println!("[VPN] {} - {}", name, line.trim());
+				}
+			}
+		}
+		Ok(())
 	}
 }
 

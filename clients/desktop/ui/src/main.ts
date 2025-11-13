@@ -1,16 +1,12 @@
-// Access Tauri API from global (no bundler)
-declare global {
-	interface Window {
-		__TAURI__?: {
-			invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-		};
-	}
-}
+// Use Tauri API from @tauri-apps/api
+import { invoke as tauriInvoke } from '@tauri-apps/api/tauri';
+
 const invoke = <T>(cmd: string, args?: Record<string, unknown>) => {
-	if (!window.__TAURI__?.invoke) {
-		return Promise.reject("Tauri API not available");
+	try {
+		return tauriInvoke<T>(cmd, args);
+	} catch (e) {
+		return Promise.reject(`Tauri API not available: ${e}`);
 	}
-	return window.__TAURI__.invoke<T>(cmd, args);
 };
 
 type DeviceStartOut = {

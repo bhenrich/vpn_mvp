@@ -3,7 +3,7 @@ use axum::extract::State;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation, jwk::{JwkSet, AlgorithmParameters}};
+	use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation, jwk::{JwkSet, AlgorithmParameters}};
 use once_cell::sync::OnceCell;
 use anyhow::{anyhow, Context};
 use tokio::time::{sleep, Duration};
@@ -52,7 +52,7 @@ struct Claims {
 fn jwk_to_decoding_key(jwk: &jsonwebtoken::jwk::Jwk) -> anyhow::Result<DecodingKey> {
 	match &jwk.algorithm {
 		AlgorithmParameters::RSA(rsa) => Ok(DecodingKey::from_rsa_components(&rsa.n, &rsa.e)?),
-		AlgorithmParameters::EC(ec) => Ok(DecodingKey::from_ec_components(&ec.x, &ec.y)?),
+		AlgorithmParameters::EllipticCurve(ec) => Ok(DecodingKey::from_ec_components(&ec.x, &ec.y)?),
 		_ => Err(anyhow!("unsupported JWK algorithm")),
 	}
 }
@@ -66,8 +66,8 @@ async fn admit(State(state): State<AdmissionState>, Json(req): Json<AdmitRequest
 		.ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
 	let mut validation = Validation::new(Algorithm::from(header.alg));
-	validation.set_audience(&[]);
-	validation.set_issuer(&[]);
+	validation.set_audience::<&str>(&[]);
+	validation.set_issuer::<&str>(&[]);
 
 	let key = jwk_to_decoding_key(jwk).map_err(|_| axum::http::StatusCode::UNAUTHORIZED)?;
 	let token_data = decode::<Claims>(&req.token, &key, &validation)
@@ -114,11 +114,11 @@ pub async fn run_admission_server() -> anyhow::Result<()> {
 	let session_ttl_secs = std::env::var("CONNECTION_TTL_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
 
 	let state = AdmissionState { jwks, redis: client, max_active, session_ttl_secs };
+	// Clone before moving state into the app
+	let redis_for_reaper = state.redis.clone();
 	let app = Router::new().route("/admit", post(admit)).with_state(state);
 	let addr = std::env::var("ADMISSION_ADDR").unwrap_or_else(|_| "0.0.0.0:9090".to_string());
 	let listener = tokio::net::TcpListener::bind(&addr).await?;
-	// Spawn background reaper for expired sessions in Redis (purge expired ZSET entries)
-	let redis_for_reaper = state.redis.clone();
 	tokio::spawn(async move {
 		loop {
 			if let Err(err) = reap_expired(redis_for_reaper.clone()).await {

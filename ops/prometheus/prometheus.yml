@@ -24,8 +24,7 @@ scrape_configs:
         regex: __meta_kubernetes_pod_label_(.+)
     metric_relabel_configs:
       # Drop any metric labels that could include PII by mistake (defense in depth)
-      - source_labels: [user, user_id, email, subject, device_id]
-        regex: '.*'
+      - regex: '(user|user_id|email|subject|device_id)'
         action: labeldrop
 
   - job_name: 'directory-api'
@@ -33,8 +32,7 @@ scrape_configs:
     static_configs:
       - targets: ['directory-api:8081']
     metric_relabel_configs:
-      - source_labels: [user, user_id, email, subject, device_id]
-        regex: '.*'
+      - regex: '(user|user_id|email|subject|device_id)'
         action: labeldrop
 
   - job_name: 'admin-api'
@@ -42,8 +40,7 @@ scrape_configs:
     static_configs:
       - targets: ['admin-api:8082']
     metric_relabel_configs:
-      - source_labels: [user, user_id, email, subject, device_id]
-        regex: '.*'
+      - regex: '(user|user_id|email|subject|device_id)'
         action: labeldrop
 
 

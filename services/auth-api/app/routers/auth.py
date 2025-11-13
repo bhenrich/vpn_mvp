@@ -2,11 +2,12 @@ from datetime import timedelta
 import base64
 import hashlib
 import json
+import os
 import time
 
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -24,6 +25,27 @@ from app.schemas import (
 from app.security import decode_jwt, key_manager, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _fetch_user_roles(user_id: int, db: Session) -> list[str]:
+	"""Fetch user roles from operators table in admin-api database"""
+	try:
+		# Query operators table directly (shared database)
+		# Note: We need to use raw SQL since Operator model is in admin-api, not auth-api
+		from sqlalchemy import text
+		result = db.execute(
+			text("SELECT role FROM operators WHERE user_id = :user_id"),
+			{"user_id": user_id}
+		)
+		row = result.first()
+		if row:
+			role = row[0]
+			return [role] if role else []
+	except Exception as e:
+		# Non-fatal - table might not exist yet or user might not be an operator
+		print(f"Warning: Could not fetch roles for user {user_id}: {e}")
+		pass
+	return []
 
 
 @router.get("/.well-known/jwks.json", include_in_schema=False)
@@ -47,7 +69,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db), redis_client = D
 	policy = db.execute(select(Policy).where(Policy.user_id == user.id)).scalar_one_or_none()
 	max_conn = policy.max_active_connections if policy else 5
 
+	# Fetch roles from operators table
+	roles = _fetch_user_roles(user.id, db)
+	
 	claims = {"policy": {"max_active_connections": max_conn}}
+	if roles:
+		claims["roles"] = roles
 	access_token = key_manager.sign_access_token(subject=str(user.id), claims=claims)
 	refresh_token = key_manager.sign_refresh_token(subject=str(user.id), claims={})
 	expires_in = settings.JWT_ACCESS_TTL_MINUTES * 60
@@ -97,7 +124,18 @@ def refresh(payload: RefreshRequest, redis_client = Depends(get_redis)) -> Token
 	if previous is None:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="refresh token already used or unknown")
 
-	access_token = key_manager.sign_access_token(subject=str(subject), claims={})
+	# Fetch roles from operators table (need db access)
+	from app.dependencies import get_db
+	db = next(get_db())
+	try:
+		user_id = int(subject) if subject.isdigit() else 0
+		roles = _fetch_user_roles(user_id, db) if user_id > 0 else []
+	finally:
+		db.close()
+	claims = {}
+	if roles:
+		claims["roles"] = roles
+	access_token = key_manager.sign_access_token(subject=str(subject), claims=claims)
 	refresh_token = key_manager.sign_refresh_token(subject=str(subject), claims={})
 	# Activate new refresh token
 	try:
@@ -193,7 +231,17 @@ def device_login_poll(payload: DeviceLoginPollRequest, redis_client = Depends(ge
 	# One-time consumption
 	redis_client.delete(key)
 
-	access_token = key_manager.sign_access_token(subject=str(user_id), claims={})
+	# Fetch roles from operators table (need db access)
+	from app.dependencies import get_db
+	db = next(get_db())
+	try:
+		roles = _fetch_user_roles(user_id, db)
+	finally:
+		db.close()
+	claims = {}
+	if roles:
+		claims["roles"] = roles
+	access_token = key_manager.sign_access_token(subject=str(user_id), claims=claims)
 	refresh_token = key_manager.sign_refresh_token(subject=str(user_id), claims={})
 	# Track refresh token JTI for rotation
 	try:

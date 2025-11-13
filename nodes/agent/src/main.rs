@@ -169,7 +169,7 @@ async fn main() -> Result<(), anyhow::Error> {
 		tokio::spawn(async move { config_stream_task(client_for_stream, id).await });
 	}
 
-	let mut shutdown = signal::ctrl_c();
+	let mut shutdown = Box::pin(signal::ctrl_c());
 
 	loop {
 		tokio::select! {
