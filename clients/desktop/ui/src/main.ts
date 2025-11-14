@@ -60,6 +60,8 @@ const selectedRegionEl = $("selected-region") as HTMLElement;
 const bgStartBtn = $("bg-start") as HTMLButtonElement;
 const bgStopBtn = $("bg-stop") as HTMLButtonElement;
 const checkUpdateBtn = $("check-update") as HTMLButtonElement;
+const logoutBtn = $("logout-btn") as HTMLButtonElement;
+const logoutBtnRegions = $("logout-btn-regions") as HTMLButtonElement;
 
 let deviceState: DeviceStartOut | null = null;
 let selectedRegion: Region | null = null;
@@ -202,6 +204,32 @@ checkUpdateBtn.addEventListener("click", async () => {
 	}
 });
 
+async function performLogout() {
+	try {
+		// Clear token from backend
+		await invoke("logout");
+		// Clear local storage state
+		localStorage.removeItem("selected-region-id");
+		localStorage.removeItem("selected-mode");
+		// Redirect to login
+		hide(onboardingEl);
+		hide(regionsEl);
+		hide(statusEl);
+		show(loginEl);
+		await refreshAppStatus();
+	} catch (e: any) {
+		console.error("Logout error:", e);
+		// Still show login on error
+		hide(onboardingEl);
+		hide(regionsEl);
+		hide(statusEl);
+		show(loginEl);
+	}
+}
+
+logoutBtn.addEventListener("click", performLogout);
+logoutBtnRegions.addEventListener("click", performLogout);
+
 deviceStartBtn.addEventListener("click", async () => {
 	const userHint = (document.getElementById("user-hint") as HTMLInputElement).value.trim() || undefined;
 	try {
@@ -286,22 +314,53 @@ async function init() {
 	loadServerHost();
 	loadConsent();
 	await refreshAppStatus();
-	const savedRegionId = localStorage.getItem("selected-region-id");
-	if (savedRegionId) {
-		await populateRegions();
-		for (let i = 0; i < regionSelect.options.length; i++) {
-			if (regionSelect.options[i].value === savedRegionId) {
-				regionSelect.selectedIndex = i;
-				const savedMode = localStorage.getItem("selected-mode");
-				const modeLabel = savedMode === "multi" ? "Multi-hop" : "Single";
-				selectedRegionEl.textContent = `${regionSelect.options[i].textContent} • ${modeLabel}` || "None";
-				break;
-			}
+	
+	// Check authentication status first
+	try {
+		const status = await invoke<string>("app_status");
+		const isAuthorized = status.includes("authorized");
+		
+		if (!isAuthorized) {
+			// Not authenticated - show login page
+			hide(onboardingEl);
+			hide(regionsEl);
+			hide(statusEl);
+			show(loginEl);
+			return;
 		}
+		
+		// Authenticated - check if region is selected
+		const savedRegionId = localStorage.getItem("selected-region-id");
+		if (savedRegionId) {
+			await populateRegions();
+			for (let i = 0; i < regionSelect.options.length; i++) {
+				if (regionSelect.options[i].value === savedRegionId) {
+					regionSelect.selectedIndex = i;
+					const savedMode = localStorage.getItem("selected-mode");
+					const modeLabel = savedMode === "multi" ? "Multi-hop" : "Single";
+					selectedRegionEl.textContent = `${regionSelect.options[i].textContent} • ${modeLabel}` || "None";
+					break;
+				}
+			}
+			hide(onboardingEl);
+			hide(loginEl);
+			hide(regionsEl);
+			show(statusEl);
+		} else {
+			// Authenticated but no region selected - show regions page
+			hide(onboardingEl);
+			hide(loginEl);
+			hide(statusEl);
+			show(regionsEl);
+			await populateRegions();
+		}
+	} catch (e) {
+		// Error checking status - default to login
+		console.error("Failed to check auth status:", e);
 		hide(onboardingEl);
-		hide(loginEl);
 		hide(regionsEl);
-		show(statusEl);
+		hide(statusEl);
+		show(loginEl);
 	}
 }
 

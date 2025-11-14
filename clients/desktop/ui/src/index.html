@@ -91,7 +91,10 @@
 			<option value="multi">Multi-hop</option>
 		</select>
 		<br /><br />
-		<button id="save-region">Save</button>
+		<div>
+			<button id="save-region">Save</button>
+			<button id="logout-btn-regions" style="margin-left: 8px;">Logout</button>
+		</div>
 	</section>
 
 	<section id="status" class="card hidden">
@@ -99,9 +102,10 @@
 		<p>App status: <span class="status" id="app-status">Unknown</span></p>
 		<p>Selected region: <span id="selected-region">None</span></p>
 		<div>
-			<button id="bg-start">Start background</button>
-			<button id="bg-stop">Stop background</button>
+			<button id="bg-start">Connect</button>
+			<button id="bg-stop">Disconnect</button>
 			<button id="check-update">Check for updates</button>
+			<button id="logout-btn" style="margin-left: 8px;">Logout</button>
 		</div>
 	</section>
 </main>

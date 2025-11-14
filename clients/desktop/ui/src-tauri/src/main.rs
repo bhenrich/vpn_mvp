@@ -478,6 +478,15 @@ async fn session_status(state: State<'_, AppState>) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+async fn logout(state: State<'_, AppState>) -> Result<(), String> {
+    // Clear token store
+    *state.token_store.lock().await = None;
+    // Disconnect any active session
+    let _ = state.agent_post::<AgentConnectRequest>("/disconnect", None).await;
+    Ok(())
+}
+
 // Placeholder for future background service management using platform adapters and CLI-compatible loops.
 // Not exposed yet as a command to avoid half-baked behavior.
 
@@ -1194,6 +1203,7 @@ fn main() {
             connect_session,
             disconnect_session,
             session_status,
+            logout,
             update_check
         ])
         .run(tauri::generate_context!())
