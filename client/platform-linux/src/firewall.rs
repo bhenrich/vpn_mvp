@@ -23,6 +23,8 @@ impl LinuxNftables {
 		script.push_str("flush table inet vpn_mvp\n");
 		script.push_str("add table inet vpn_mvp\n");
 		script.push_str("add chain inet vpn_mvp killswitch { type filter hook output priority 0; policy accept; }\n");
+		// Always allow loopback traffic so local services like the agent remain reachable
+		script.push_str("add rule inet vpn_mvp killswitch oifname \"lo\" accept\n");
 		// Allow traffic going out via VPN iface
 		script.push_str(&format!("add rule inet vpn_mvp killswitch oifname \"{}\" accept\n", iface));
 		// Allow control-plane IPv4
@@ -91,6 +93,8 @@ impl LinuxNftables {
 		script.push_str("flush table inet vpn_mvp\n");
 		script.push_str("add table inet vpn_mvp\n");
 		script.push_str("add chain inet vpn_mvp killswitch { type filter hook output priority 0; policy accept; }\n");
+		// Always allow loopback traffic so local services like the agent remain reachable
+		script.push_str("add rule inet vpn_mvp killswitch oifname \"lo\" accept\n");
 		script.push_str(&format!("add rule inet vpn_mvp killswitch oifname \"{}\" accept\n", iface));
 		if !allow_ips_v4.is_empty() {
 			let set_elems = allow_ips_v4.join(", ");
