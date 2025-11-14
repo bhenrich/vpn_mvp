@@ -449,7 +449,8 @@ async fn connect_session(
             &token,
             region,
             &mode,
-            full_tunnel.unwrap_or(true),
+            // Default to split tunnel for safer local testing; can be toggled from UI when needed.
+            full_tunnel.unwrap_or(false),
             device.id,
         )
         .await?;

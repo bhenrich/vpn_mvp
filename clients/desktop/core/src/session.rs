@@ -166,27 +166,46 @@ impl WireguardSessionManager {
     async fn apply_policy(&self) -> Result<(), CoreError> {
         let iface = self.iface();
 
-        let allow_v4: Vec<&str> = self
+        // Determine whether this is a full-tunnel configuration (0.0.0.0/0 or ::/0),
+        // in which case we apply a strict kill switch. For split-tunnel configs,
+        // we skip the kill switch to avoid breaking general connectivity.
+        let full_tunnel = self
             .policy
-            .kill_switch_allow_v4
+            .routes_v4
             .iter()
-            .map(|s| s.as_str())
-            .collect();
-        let allow_v6: Vec<&str> = self
-            .policy
-            .kill_switch_allow_v6
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
-        let _ = self.kill_switch.disable().await;
-        self.kill_switch
-            .enable(
-                iface,
-                &allow_v4,
-                &allow_v6,
-                &self.policy.kill_switch_allow_uids,
-            )
-            .await?;
+            .any(|r| r == "0.0.0.0/0")
+            || self
+                .policy
+                .routes_v6
+                .iter()
+                .any(|r| r == "::/0");
+
+        if full_tunnel {
+            let allow_v4: Vec<&str> = self
+                .policy
+                .kill_switch_allow_v4
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            let allow_v6: Vec<&str> = self
+                .policy
+                .kill_switch_allow_v6
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            let _ = self.kill_switch.disable().await;
+            self.kill_switch
+                .enable(
+                    iface,
+                    &allow_v4,
+                    &allow_v6,
+                    &self.policy.kill_switch_allow_uids,
+                )
+                .await?;
+        } else {
+            // Ensure any previous kill switch rules are removed in split-tunnel mode.
+            let _ = self.kill_switch.disable().await;
+        }
 
         if !self.policy.dns_servers.is_empty() {
             let dns_refs: Vec<&str> = self.policy.dns_servers.iter().map(|s| s.as_str()).collect();
