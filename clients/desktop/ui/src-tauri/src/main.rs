@@ -794,7 +794,7 @@ async fn start_autoconnect(
                 .status(&name)
                 .await
                 .unwrap_or(vpn_core::ConnectionState::Unknown);
-
+            
             // Log connection status changes
             match status {
                 vpn_core::ConnectionState::Connected => {
@@ -803,7 +803,7 @@ async fn start_autoconnect(
                         eprintln!("[VPN] Connection established - Windows is now routing traffic through VPN");
                         connection_logged = true;
                     }
-
+                    
                     // Log packet stats every 5 seconds
                     if last_stats_time.elapsed().as_secs() >= 5 {
                         let _ = log_vpn_packet_stats(&*exec, &name).await;
@@ -819,7 +819,7 @@ async fn start_autoconnect(
                 }
                 _ => {}
             }
-
+            
             if trusted {
                 if matches!(
                     status,
@@ -927,7 +927,7 @@ async fn log_vpn_packet_stats(
                 }
             }
         }
-
+        
         // Also check rasdial for connection details
         let args = ["rasdial", profile_name];
         let out = exec.run(args[0], &args[1..]).await?;

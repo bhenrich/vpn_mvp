@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use vpn_core::{CommandExecutor, CoreError};
 use std::fs;
-use tempfile::NamedTempFile;
 
 /// Manage nftables-based kill switch rules for a given interface.
 /// Strategy:
@@ -45,13 +44,15 @@ impl LinuxNftables {
 		// Finally, drop everything else
 		script.push_str("add rule inet vpn_mvp killswitch counter drop\n");
 
-		let path: String = tokio::task::spawn_blocking(move || -> Result<String, CoreError> {
-			let mut f = NamedTempFile::new().map_err(|e| CoreError::Other(format!("tempfile: {e}")))?;
-			fs::write(f.path(), script).map_err(|e| CoreError::Other(format!("write nft script: {e}")))?;
-			Ok(f.into_temp_path().to_path_buf().to_string_lossy().to_string())
-		})
-		.await
-		.map_err(|e| CoreError::Other(format!("spawn blocking failed: {e}")))??;
+		// Write nftables script to a stable temp file path that remains valid
+		// while `nft -f` is executing. Using a fixed filename avoids the issue
+		// where a tempfile is deleted before nft can read it.
+		let path = {
+			let tmp_path = std::env::temp_dir().join("vpn_mvp_nft_killswitch.nft");
+			fs::write(&tmp_path, script)
+				.map_err(|e| CoreError::Other(format!("write nft script: {e}")))?;
+			tmp_path.to_string_lossy().to_string()
+		};
 
 		let out = self.exec.run("nft", &["-f", &path]).await?;
 		if out.status != 0 {
@@ -104,13 +105,12 @@ impl LinuxNftables {
 		}
 		script.push_str("add rule inet vpn_mvp killswitch counter drop\n");
 
-		let path: String = tokio::task::spawn_blocking(move || -> Result<String, CoreError> {
-			let f = NamedTempFile::new().map_err(|e| CoreError::Other(format!("tempfile: {e}")))?;
-			fs::write(f.path(), script).map_err(|e| CoreError::Other(format!("write nft script: {e}")))?;
-			Ok(f.into_temp_path().to_path_buf().to_string_lossy().to_string())
-		})
-		.await
-		.map_err(|e| CoreError::Other(format!("spawn blocking failed: {e}")))??;
+		let path = {
+			let tmp_path = std::env::temp_dir().join("vpn_mvp_nft_killswitch_uids.nft");
+			fs::write(&tmp_path, script)
+				.map_err(|e| CoreError::Other(format!("write nft script: {e}")))?;
+			tmp_path.to_string_lossy().to_string()
+		};
 
 		let out = self.exec.run("nft", &["-f", &path]).await?;
 		if out.status != 0 {

@@ -28,6 +28,12 @@ async def ensure_client_ipv4(db: AsyncSession, device: ClientDevice) -> str:
 
 
 async def _allocate_ipv4(db: AsyncSession, device: ClientDevice) -> str:
+	# Ensure the device has a primary key assigned before using it for deterministic allocation.
+	# For newly created devices, the ID may not be populated until after the first flush.
+	if device.id is None:
+		await db.flush()
+		await db.refresh(device)
+
 	candidates = _POOL_MAX_HOST - _POOL_MIN_HOST + 1
 	base = device.id.int % candidates
 	for offset in range(candidates):

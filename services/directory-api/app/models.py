@@ -128,4 +128,13 @@ class ClientDevice(Base):
 		self.last_seen_at = now
 		self.updated_at = now
 
+	@property
+	def wg_public_key(self) -> str:
+		"""
+		Compatibility shim for API schemas expecting `wg_public_key` while the
+		database column is named `wg_pubkey`.
+		Used by Pydantic `from_attributes` when serializing `DeviceRead`.
+		"""
+		return self.wg_pubkey
+
 

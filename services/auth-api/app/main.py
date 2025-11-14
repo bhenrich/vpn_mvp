@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.bootstrap import bootstrap_test_user
+from app.bootstrap import bootstrap_seed_users
 from app.config import settings
 from app.routers import auth as auth_routes
 from app.routers import devices as device_routes
@@ -16,7 +16,7 @@ from services.common.observability import init_observability
 async def lifespan(app: FastAPI):
 	"""Lifespan context manager for startup/shutdown"""
 	# Startup
-	bootstrap_test_user()
+	bootstrap_seed_users()
 	yield
 	# Shutdown (nothing to do)
 
