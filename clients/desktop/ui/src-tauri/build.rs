@@ -3,5 +3,3 @@ fn main() {
     std::env::set_var("TAURI_SKIP_WIN_RES", "true");
     tauri_build::build()
 }
-
-

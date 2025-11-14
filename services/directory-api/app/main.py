@@ -7,6 +7,7 @@ from app.grpc_server import start_grpc_server, stop_grpc_server
 from app.routers.regions import router as regions_router
 from app.routers.nodes import router as nodes_router
 from app.routers.mesh import router as mesh_router
+from app.routers.devices import router as devices_router
 from services.common.observability import init_observability
 
 app = FastAPI(title="directory-api", version="0.1.0")
@@ -41,6 +42,7 @@ def healthz() -> dict[str, str]:
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(nodes_router, prefix="/nodes", tags=["nodes"])
 app.include_router(mesh_router, prefix="/mesh", tags=["mesh"])
+app.include_router(devices_router, prefix="/devices", tags=["devices"])
 
 
 if __name__ == "__main__":

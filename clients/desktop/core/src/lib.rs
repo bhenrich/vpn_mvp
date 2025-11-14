@@ -17,10 +17,12 @@ use std::sync::Arc;
 
 use tokio::{sync::oneshot, task::JoinHandle};
 use vpn_core::{
-    ConnectionState, CoreError, DeviceAddress, TunBackend, VpnAdapter, CommandExecutor,
+    CommandExecutor, ConnectionState, CoreError, DeviceAddress, TunBackend, VpnAdapter,
 };
 
 pub use vpn_core::wg::{AllowedIp, KeyPair, Peer, WgDeviceConfig};
+mod session;
+pub use session::{SessionPolicy, WireguardSessionManager};
 
 /// High-level configuration for the auto-connect background loop.
 #[derive(Debug, Clone)]
@@ -91,10 +93,16 @@ where
                 .unwrap_or(ConnectionState::Unknown);
 
             if trusted {
-                if matches!(status, ConnectionState::Connected | ConnectionState::Connecting) {
+                if matches!(
+                    status,
+                    ConnectionState::Connected | ConnectionState::Connecting
+                ) {
                     let _ = adapter.disconnect(&profile).await;
                 }
-            } else if !matches!(status, ConnectionState::Connected | ConnectionState::Connecting) {
+            } else if !matches!(
+                status,
+                ConnectionState::Connected | ConnectionState::Connecting
+            ) {
                 let _ = adapter.connect(&profile).await;
                 if let (Some(iface), Some(mtu)) = (&iface, mtu) {
                     let _ = set_mtu(exec.as_ref(), iface, mtu).await;
@@ -111,7 +119,10 @@ where
         }
     });
 
-    AutoConnectHandle { handle, stop_tx: tx }
+    AutoConnectHandle {
+        handle,
+        stop_tx: tx,
+    }
 }
 
 /// Cross-platform helper to query the current Wi‑Fi SSID, if any.
@@ -189,7 +200,10 @@ pub async fn set_mtu(exec: &dyn CommandExecutor, iface: &str, mtu: u32) -> Resul
     #[cfg(target_os = "linux")]
     {
         let out = exec
-            .run("ip", &["link", "set", "dev", iface, "mtu", &mtu.to_string()])
+            .run(
+                "ip",
+                &["link", "set", "dev", iface, "mtu", &mtu.to_string()],
+            )
             .await?;
         if out.status != 0 {
             return Err(CoreError::CommandFailed(out.stderr));
@@ -443,5 +457,3 @@ impl SplitTunnelRoutes {
         Ok(())
     }
 }
-
-

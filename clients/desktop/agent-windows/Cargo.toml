@@ -1,0 +1,16 @@
+[package]
+name = "agent-windows"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agent-common = { path = "../agent-common" }
+anyhow = "1"
+axum = { version = "0.7", default-features = false, features = ["macros", "json", "tokio", "http1"] }
+desktop-core = { path = "../core" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+vpn_core = { package = "vpn-core", path = "../../../client/vpn-core" }
+
+

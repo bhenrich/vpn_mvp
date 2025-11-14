@@ -15,11 +15,22 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.main import app  # noqa: E402
+from app.security import verify_bearer, require_operator, require_admin  # noqa: E402
 
 # Disable app startup/shutdown hooks that touch external services for unit tests
 app.router.on_startup.clear()
 app.router.on_shutdown.clear()
 
+_TEST_USER_ID = uuid.uuid4()
+
+
+def _fake_claims() -> dict[str, str]:
+	return {"sub": str(_TEST_USER_ID), "roles": ["operator", "admin"]}
+
+
+app.dependency_overrides[verify_bearer] = lambda: _fake_claims()
+app.dependency_overrides[require_operator] = lambda: _fake_claims()
+app.dependency_overrides[require_admin] = lambda: _fake_claims()
 
 _db_initialized = False
 
@@ -251,4 +262,52 @@ def test_mesh_config_latency_budget() -> None:
 		region_id = resp.json()["id"]
 
 	asyncio.run(run(grpc_addr, region_id))
+
+
+def test_device_register_and_client_config_flow() -> None:
+	_ensure_db()
+	with TestClient(app) as client:
+		region_resp = client.post("/regions", json={"country_code": "US", "city": f"DeviceCity-{uuid.uuid4().hex[:6]}"})
+		assert region_resp.status_code == 201, region_resp.text
+		region_id = region_resp.json()["id"]
+
+		node_pk = f"pk-{uuid.uuid4()}"
+		node_payload = {
+			"public_key": node_pk,
+			"region_id": region_id,
+			"internal_wg_ip": "10.66.0.1",
+			"egress_ips": ["198.51.100.10"],
+			"public_endpoint": "198.51.100.10",
+			"listen_port": 51820,
+		}
+		resp = client.post("/nodes/register", json=node_payload)
+		assert resp.status_code == 201, resp.text
+
+		device_payload = {
+			"device_name": "Arch Laptop",
+			"platform": "linux",
+			"wg_public_key": f"client-{uuid.uuid4().hex}",
+		}
+		resp = client.post("/devices/register", json=device_payload)
+		assert resp.status_code == 201, resp.text
+		device = resp.json()
+		assert device["device_name"] == "Arch Laptop"
+		assert device["client_ip_v4"].startswith("10.66.0.")
+		device_id = device["id"]
+
+		config_payload = {
+			"region_id": region_id,
+			"mode": "single",
+			"device_id": device_id,
+			"full_tunnel": True,
+			"ipv6": False,
+		}
+		resp = client.post("/mesh/client-config", json=config_payload)
+		assert resp.status_code == 200, resp.text
+		cfg = resp.json()
+		assert cfg["device_id"] == device_id
+		assert cfg["client_ip_v4"].startswith("10.66.0.")
+		assert cfg["allowed_ips_v4"] == ["0.0.0.0/0"]
+		assert cfg["entry"]["public_key"] == node_pk
+		assert cfg["entry"]["endpoint_host"] == "198.51.100.10"
 

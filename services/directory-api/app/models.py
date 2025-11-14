@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, ForeignKey, Enum, DateTime, UniqueConstraint, JSON
+from sqlalchemy import String, ForeignKey, Enum, DateTime, UniqueConstraint, JSON, Integer
 from sqlalchemy.types import TypeDecorator
 
 
@@ -56,6 +56,10 @@ class JsonCompat(TypeDecorator):
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+def _utcnow() -> datetime:
+	return datetime.now(timezone.utc)
+
+
 class Base(DeclarativeBase):
 	pass
 
@@ -85,6 +89,8 @@ class Node(Base):
 
 	internal_wg_ip: Mapped[str | None] = mapped_column(InetCompat(), nullable=True)
 	egress_ips: Mapped[list[str] | None] = mapped_column(JsonCompat(), nullable=True)
+	public_endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+	listen_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 	capabilities: Mapped[dict | None] = mapped_column(JsonCompat(), nullable=True)
 	status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
@@ -96,5 +102,30 @@ class Node(Base):
 
 	def touch(self) -> None:
 		self.last_seen_at = datetime.now(timezone.utc)
+
+
+class ClientDevice(Base):
+	__tablename__ = "client_devices"
+
+	id: Mapped[uuid.UUID] = mapped_column(UuidCompat(), primary_key=True, default=uuid.uuid4)
+	user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+	device_name: Mapped[str] = mapped_column(String(128), nullable=False, default="Unnamed device")
+	platform: Mapped[str] = mapped_column(String(32), nullable=False)
+	wg_pubkey: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+	status: Mapped[str] = mapped_column(String(32), nullable=False, default="registered")
+	client_ip_v4: Mapped[str | None] = mapped_column(InetCompat(), nullable=True)
+	client_ip_v6: Mapped[str | None] = mapped_column(InetCompat(), nullable=True)
+	created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+	updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+	last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+	__table_args__ = (
+		UniqueConstraint("user_id", "device_name", name="uq_client_device_user_name"),
+	)
+
+	def touch(self) -> None:
+		now = _utcnow()
+		self.last_seen_at = now
+		self.updated_at = now
 
 

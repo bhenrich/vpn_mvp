@@ -36,6 +36,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-common"
+version = "0.1.0"
+dependencies = [
+ "axum 0.7.9",
+ "base64 0.22.1",
+ "desktop-core",
+ "serde",
+ "serde_json",
+ "vpn-core",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "agent-linux"
+version = "0.1.0"
+dependencies = [
+ "agent-common",
+ "anyhow",
+ "axum 0.7.9",
+ "desktop-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "vpn-core",
+]
+
+[[package]]
+name = "agent-macos"
+version = "0.1.0"
+dependencies = [
+ "agent-common",
+ "anyhow",
+ "axum 0.7.9",
+ "desktop-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "vpn-core",
+]
+
+[[package]]
+name = "agent-windows"
+version = "0.1.0"
+dependencies = [
+ "agent-common",
+ "anyhow",
+ "axum 0.7.9",
+ "desktop-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "vpn-core",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -469,6 +524,7 @@ checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
  "axum-core 0.4.5",
+ "axum-macros",
  "bytes",
  "futures-util",
  "http 1.3.1",
@@ -531,6 +587,17 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "axum-macros"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57d123550fa8d071b7255cb0cc04dc302baa6c8c4a79f55701552684d8399bce"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
 ]
 
 [[package]]
@@ -1360,6 +1427,7 @@ dependencies = [
  "fiat-crypto",
  "rustc_version",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1457,9 +1525,12 @@ dependencies = [
 name = "desktop-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "base64 0.22.1",
  "platform-linux",
  "platform-macos",
  "platform-windows",
+ "tempfile",
  "tokio",
  "vpn-core",
 ]
@@ -1491,6 +1562,7 @@ dependencies = [
  "platform-macos",
  "platform-windows",
  "rand 0.8.5",
+ "rand_core 0.6.4",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
@@ -1498,7 +1570,10 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "uuid",
  "vpn-core",
+ "whoami",
+ "x25519-dalek",
 ]
 
 [[package]]
@@ -7644,6 +7719,7 @@ checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 
@@ -7781,6 +7857,12 @@ checksum = "0562428422c63773dad2c345a1882263bbf4d65cf3f42e90921f787ef5ad58e7"
 dependencies = [
  "wit-bindgen",
 ]
+
+[[package]]
+name = "wasite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
 
 [[package]]
 name = "wasm-bindgen"
@@ -8261,6 +8343,17 @@ checksum = "b671ff9fb03f78b46ff176494ee1ebe7d603393f42664be55b64dc8d53969805"
 dependencies = [
  "bitflags 2.10.0",
  "js-sys",
+ "web-sys",
+]
+
+[[package]]
+name = "whoami"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d4a4db5077702ca3015d3d02d74974948aba2ad9e12ab7df718ee64ccd7e97d"
+dependencies = [
+ "libredox",
+ "wasite",
  "web-sys",
 ]
 
@@ -9076,6 +9169,8 @@ checksum = "c7e468321c81fb07fa7f4c636c3972b9100f0346e5b6a9f2bd0603a52f7ed277"
 dependencies = [
  "curve25519-dalek",
  "rand_core 0.6.4",
+ "serde",
+ "zeroize",
 ]
 
 [[package]]
@@ -9282,6 +9377,20 @@ name = "zeroize"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
+]
 
 [[package]]
 name = "zerotrie"

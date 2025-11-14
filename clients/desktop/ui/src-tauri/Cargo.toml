@@ -18,6 +18,10 @@ rand = "0.8"
 base64 = "0.22"
 sha2 = "0.10"
 dirs-next = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+whoami = "1"
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+rand_core = "0.6"
 anyhow = "1"
 vpn_core = { package = "vpn-core", path = "../../../../client/vpn-core" }
 

@@ -129,7 +129,8 @@ serverSaveBtn.addEventListener("click", async () => {
 async function refreshAppStatus() {
 	try {
 		const status = await invoke<string>("app_status");
-		appStatusEl.textContent = status;
+		const session = await invoke<string>("session_status");
+		appStatusEl.textContent = `${status} • tunnel:${session}`;
 	} catch (e) {
 		appStatusEl.textContent = "error";
 	}
@@ -258,32 +259,26 @@ saveRegionBtn.addEventListener("click", async () => {
 });
 
 bgStartBtn.addEventListener("click", async () => {
+	const regionId = localStorage.getItem("selected-region-id");
+	if (!regionId) {
+		alert("Select a region before connecting.");
+		return;
+	}
+	const mode = (localStorage.getItem("selected-mode") === "multi" ? "multi" : "single");
 	try {
-		const profileName = "default";
-		// Start background autoconnect loop directly inside the Tauri process,
-		// instead of going through the separate desktop-service sidecar.
-		await invoke("start_autoconnect", {
-			args: {
-				profile: profileName,
-				iface: null as any,
-				mtu: null as any,
-				trusted_ssids: [],
-				interval: 10
-			}
-		});
+		await invoke("connect_session", { regionId, mode, fullTunnel: true });
 		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Failed to start background: ${e}`);
+		alert(`Failed to connect: ${e}`);
 	}
 });
 
 bgStopBtn.addEventListener("click", async () => {
 	try {
-		// Stop the in-process background autoconnect loop.
-		await invoke("stop_autoconnect");
+		await invoke("disconnect_session");
 		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Failed to stop background: ${e}`);
+		alert(`Failed to disconnect: ${e}`);
 	}
 });
 
