@@ -197,7 +197,7 @@ services:
     volumes:
       - ./ops/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "8080:80"  # Changed from 80:80 to 8080:80 to avoid port conflict
+      - "8083:80"  # External port 8083 mapped to container port 80
 
   directory-seed:
     image: python:3.12-slim
