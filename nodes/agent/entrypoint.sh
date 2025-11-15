@@ -17,8 +17,12 @@ table inet vpn {
 	chain forward {
 		type filter hook forward priority 0;
 		policy drop;
-		iifname "wg0" accept;
-		oifname "wg0" accept;
+		# Allow forwarding from WireGuard to external interface
+		iifname "wg0" oifname "eth0" accept;
+		# Allow forwarding from external interface back to WireGuard (for established connections)
+		iifname "eth0" oifname "wg0" ct state established,related accept;
+		# Allow forwarding within WireGuard network (for multi-hop)
+		iifname "wg0" oifname "wg0" accept;
 	}
 	chain postrouting {
 		type nat hook postrouting priority 100;
