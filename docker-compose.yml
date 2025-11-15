@@ -1,4 +1,4 @@
-version: "3.9"
+# version tag is obsolete, do not re-add
 
 x-node-agent-env: &node-agent-env
   DIRECTORY_HTTP_ADDR: http://directory-api:8081
@@ -12,7 +12,6 @@ x-node-agent-env: &node-agent-env
 
 x-node-agent-base: &node-agent-base
   build: ./nodes/agent
-  network_mode: host
   cap_add:
     - NET_ADMIN
     - SYS_MODULE
@@ -111,6 +110,8 @@ services:
 
   node-agent-de-berlin:
     <<: *node-agent-base
+    ports:
+      - "51820:51820/udp"
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-berlin.dev.local
@@ -122,6 +123,8 @@ services:
 
   node-agent-de-munich:
     <<: *node-agent-base
+    ports:
+      - "51821:51821/udp"
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-munich.dev.local
