@@ -12,8 +12,16 @@ x-node-agent-env: &node-agent-env
   MTLS_CLIENT_KEY_PATH: /certs/node.key
 
 x-node-agent-base: &node-agent-base
-  build: ./nodes/agent
+  build:
+    context: ./nodes/agent
+    # Note: If DNS resolution fails during build, configure Docker daemon DNS:
+    # Edit /etc/docker/daemon.json and add: {"dns": ["8.8.8.8", "1.1.1.1"]}
+    # Then restart Docker: sudo systemctl restart docker
   network_mode: host
+  # DNS configuration for runtime (doesn't affect build-time)
+  dns:
+    - 8.8.8.8
+    - 1.1.1.1
   cap_add:
     - NET_ADMIN
     - SYS_MODULE

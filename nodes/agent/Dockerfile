@@ -16,7 +16,11 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# Install packages with retry logic and DNS fallback
+# Note: DNS resolution during build depends on Docker daemon DNS configuration
+# If DNS fails, configure Docker daemon DNS or use: docker build --dns 8.8.8.8 --dns 1.1.1.1
+RUN apt-get update || (sleep 5 && apt-get update) || (sleep 10 && apt-get update) && \
+	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 	unbound nftables iproute2 ca-certificates curl wireguard-tools dos2unix && \
 	update-ca-certificates && \
 	rm -rf /var/lib/apt/lists/*
