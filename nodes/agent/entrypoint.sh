@@ -9,6 +9,24 @@ if [ "${RUN_NFT_SETUP:-0}" = "1" ]; then
 	nft -f /etc/nftables.conf || echo "nftables apply failed"
 fi
 
+# Always apply nftables rules for forwarding and NAT (required for VPN to work)
+# This is needed even in dynamic mode when node-agent manages WireGuard
+echo "applying nftables rules for VPN forwarding and NAT"
+nft -f - <<'NFTEOF' || echo "nftables apply failed"
+table inet vpn {
+	chain forward {
+		type filter hook forward priority 0;
+		policy drop;
+		iifname "wg0" accept;
+		oifname "wg0" accept;
+	}
+	chain postrouting {
+		type nat hook postrouting priority 100;
+		oifname != "wg0" masquerade;
+	}
+}
+NFTEOF
+
 # Optional: bring up a static WireGuard server for local testing
 if [ "${WG_STATIC:-0}" = "1" ]; then
 	echo "bringing up static WireGuard interface wg0"
