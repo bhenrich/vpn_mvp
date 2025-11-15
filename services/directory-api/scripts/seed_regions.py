@@ -91,7 +91,8 @@ def main() -> None:
     # If we don't have a token and there are no existing regions, we can't create new ones
     if not token:
         print("No authentication token available. Regions already exist or authentication failed.")
-        print(f"Existing regions: {[f\"{r['country_code']}/{r['city']}\" for r in existing]}")
+        existing_str = ", ".join([f"{r['country_code']}/{r['city']}" for r in existing])
+        print(f"Existing regions: {existing_str}")
         return
     
     # Create missing regions
