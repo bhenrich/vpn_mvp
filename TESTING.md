@@ -56,6 +56,9 @@ This guide walks through testing the VPN system with two nodes running on a Wind
 From the repository root on your Windows PC:
 
 ```powershell
+# First, clean up any orphan containers from previous runs
+docker compose down --remove-orphans
+
 # Start all backend services and both nodes
 docker compose up -d postgres redis auth-api directory-api admin-api directory-seed `
   node-agent-de-berlin node-agent-de-munich
@@ -64,6 +67,21 @@ docker compose up -d postgres redis auth-api directory-api admin-api directory-s
 docker compose logs --tail=50 directory-api
 docker compose logs --tail=50 node-agent-de-berlin
 docker compose logs --tail=50 node-agent-de-munich
+```
+
+**Note:** If you see a port conflict error (e.g., "port 51820 is already allocated"), there may be an orphan container from a previous run. Clean it up:
+
+```powershell
+# Check for orphan containers
+docker ps -a | Select-String "node-agent"
+
+# Stop and remove orphan containers
+docker stop vpn_mvp-node-agent-1  # Replace with actual container name
+docker rm vpn_mvp-node-agent-1
+
+# Or use docker compose to clean up
+docker compose down --remove-orphans
+docker compose up -d node-agent-de-berlin node-agent-de-munich
 ```
 
 **Expected output:**
@@ -338,6 +356,28 @@ docker compose logs -f node-agent-de-munich
    ```
 
 ## Troubleshooting
+
+### Port Conflicts
+
+**Symptoms:** "port 51820 is already allocated" or "port 51821 is already allocated" when starting nodes
+
+**Solutions:**
+```powershell
+# Find orphan containers from previous runs
+docker ps -a | Select-String "node-agent"
+
+# Stop and remove orphan containers
+docker stop <orphan-container-name>
+docker rm <orphan-container-name>
+
+# Or clean up all orphans at once
+docker compose down --remove-orphans
+docker compose up -d node-agent-de-berlin node-agent-de-munich
+
+# Verify ports are free
+netstat -ano | Select-String ":51820"
+netstat -ano | Select-String ":51821"
+```
 
 ### Client Can't Connect to Server
 

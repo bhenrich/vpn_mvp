@@ -3,7 +3,7 @@ version: "3.9"
 x-node-agent-env: &node-agent-env
   DIRECTORY_HTTP_ADDR: http://directory-api:8081
   DIRECTORY_GRPC_ADDR: http://directory-api:50051
-  RUN_NFT_SETUP: "1"
+  RUN_NFT_SETUP: "0" # TODO: ENABLE AND FIX NFT SETUP
   WG_SERVER_KEY_PATH: /var/run/vpn/server.key
   MTLS_ENABLED: "${MTLS_ENABLED:-0}"
   MTLS_CA_CERT_PATH: /certs/ca.crt
@@ -19,8 +19,10 @@ x-node-agent-base: &node-agent-base
     - /etc/wireguard:rw,noexec,nosuid,nodev,mode=0700
     - /var/run/vpn:rw,noexec,nosuid,nodev,mode=0700
   depends_on:
-    - directory-api
-    - directory-seed
+    directory-api:
+      condition: service_healthy
+    directory-seed:
+      condition: service_completed_successfully
   volumes:
     - ./tools/pki/dev:/certs:ro
   environment:

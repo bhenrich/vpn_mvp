@@ -23,9 +23,24 @@ _registry_lock = asyncio.Lock()
 
 
 def _proto_src_dir() -> str:
-	# In repo layout, services/common/protos sits two levels up from app/.
-	root = Path(__file__).resolve().parents[3]
-	return str((root / "services" / "common" / "protos").resolve())
+	# In Docker container: /app/app/grpc_server.py -> /app/services/common/protos
+	# In repo layout: services/directory-api/app/grpc_server.py -> services/common/protos
+	# Try Docker layout first (parents[1]), fall back to repo layout (parents[3])
+	file_path = Path(__file__).resolve()
+	
+	# Docker layout: /app/app/grpc_server.py -> /app/services/common/protos
+	docker_path = file_path.parents[1] / "services" / "common" / "protos"
+	if docker_path.exists():
+		return str(docker_path.resolve())
+	
+	# Repo layout: services/directory-api/app/grpc_server.py -> services/common/protos
+	if len(file_path.parts) >= 4:
+		repo_path = file_path.parents[3] / "services" / "common" / "protos"
+		if repo_path.exists():
+			return str(repo_path.resolve())
+	
+	# Fallback: try parents[1] anyway (most common case)
+	return str((file_path.parents[1] / "services" / "common" / "protos").resolve())
 
 
 def _gen_out_dir() -> Path:

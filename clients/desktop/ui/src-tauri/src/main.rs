@@ -458,7 +458,7 @@ async fn connect_session(
         )
         .await?;
     let session_id = cfg.session_id;
-    let request = state.build_agent_connect_request(&device, &cfg);
+    let request = state.build_agent_connect_request(&device, &cfg).await;
     if let Err(err) = state.agent_post("/connect", Some(&request)).await {
         let _ = state.disconnect_remote_session(session_id).await;
         return Err(err);
@@ -671,7 +671,55 @@ impl AppState {
         resp.json().await.map_err(|e| e.to_string())
     }
 
-    fn build_agent_connect_request(
+    async fn resolve_endpoint(host: &str, port: u16, server_base_url: Option<String>) -> String {
+        use std::net::ToSocketAddrs;
+        let host_port = format!("{}:{}", host, port);
+        
+        // Try to resolve the hostname to an IP address
+        // Use tokio::task::spawn_blocking to avoid blocking the async runtime
+        match tokio::task::spawn_blocking({
+            let host_port = host_port.clone();
+            move || {
+                host_port.to_socket_addrs().and_then(|mut addrs| {
+                    addrs.next().ok_or_else(|| {
+                        std::io::Error::new(std::io::ErrorKind::Other, "no addresses found")
+                    })
+                })
+            }
+        })
+        .await
+        {
+            Ok(Ok(addr)) => addr.to_string(),
+            _ => {
+                // If resolution fails, try to extract IP from server_base_url as fallback
+                if let Some(base_url) = server_base_url {
+                    if let Ok(url) = reqwest::Url::parse(&base_url) {
+                        if let Some(host_str) = url.host_str() {
+                            // Try to parse as IP, or resolve it
+                            if let Ok(ip) = host_str.parse::<std::net::IpAddr>() {
+                                return format!("{}:{}", ip, port);
+                            }
+                            // Try to resolve the server hostname
+                            let server_host_port = format!("{}:{}", host_str, port);
+                            if let Ok(Ok(addr)) = tokio::task::spawn_blocking(move || {
+                                server_host_port.to_socket_addrs().and_then(|mut addrs| {
+                                    addrs.next().ok_or_else(|| {
+                                        std::io::Error::new(std::io::ErrorKind::Other, "no addresses found")
+                                    })
+                                })
+                            }).await {
+                                return addr.to_string();
+                            }
+                        }
+                    }
+                }
+                // Last resort: return hostname as-is (will fail at agent level with clearer error)
+                host_port
+            }
+        }
+    }
+
+    async fn build_agent_connect_request(
         &self,
         device: &DeviceIdentity,
         cfg: &MeshClientConfigResponse,
@@ -690,12 +738,17 @@ impl AppState {
         }
         let mut allowed_ips = cfg.allowed_ips_v4.clone();
         allowed_ips.extend(cfg.allowed_ips_v6.clone());
+        
+        // Resolve hostname to IP address for endpoint (SocketAddr requires IP, not hostname)
+        let server_url = {
+            let server = self.server.lock().await;
+            Some(server.base_directory_url.clone())
+        };
+        let endpoint = Self::resolve_endpoint(&cfg.entry.endpoint_host, cfg.entry.endpoint_port, server_url).await;
+        
         let peer = AgentPeerRequest {
             public_key: cfg.entry.public_key.clone(),
-            endpoint: Some(format!(
-                "{}:{}",
-                cfg.entry.endpoint_host, cfg.entry.endpoint_port
-            )),
+            endpoint: Some(endpoint),
             allowed_ips,
             persistent_keepalive_secs: Some(cfg.keepalive_seconds),
         };
