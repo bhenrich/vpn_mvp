@@ -202,11 +202,17 @@ services:
   directory-seed:
     image: python:3.12-slim
     depends_on:
-      - directory-api
+      directory-api:
+        condition: service_healthy
+      auth-api:
+        condition: service_healthy
     volumes:
       - ./services/directory-api/scripts:/scripts:ro
     environment:
       DIRECTORY_URL: http://directory-api:8081
+      AUTH_URL: http://auth-api:8080
+      SEED_EMAIL: ${SEED_EMAIL:-admin@test.de}
+      SEED_PASSWORD: ${SEED_PASSWORD:-test}
     entrypoint:
       - "sh"
       - "-c"
