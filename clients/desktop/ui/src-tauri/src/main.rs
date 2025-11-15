@@ -732,19 +732,48 @@ impl AppState {
             routes_v4.push("10.66.0.0/24".into());
         }
         let routes_v6 = cfg.allowed_ips_v6.clone();
-        let mut kill_switch_allow_v4 = vec![cfg.entry.endpoint_host.clone()];
-        if let Some(exit) = &cfg.exit {
-            kill_switch_allow_v4.push(exit.endpoint_host.clone());
-        }
-        let mut allowed_ips = cfg.allowed_ips_v4.clone();
-        allowed_ips.extend(cfg.allowed_ips_v6.clone());
         
-        // Resolve hostname to IP address for endpoint (SocketAddr requires IP, not hostname)
+        // Resolve hostnames to IP addresses
         let server_url = {
             let server = self.server.lock().await;
             Some(server.base_directory_url.clone())
         };
-        let endpoint = Self::resolve_endpoint(&cfg.entry.endpoint_host, cfg.entry.endpoint_port, server_url).await;
+        
+        // Resolve endpoint hostname to IP for the peer endpoint (WireGuard connection)
+        let endpoint = Self::resolve_endpoint(&cfg.entry.endpoint_host, cfg.entry.endpoint_port, server_url.clone()).await;
+        
+        // Kill switch allow IPs: control-plane servers (auth-api, directory-api) that must bypass kill switch
+        // Note: VPN node endpoints don't need to be in kill switch - they go through the VPN interface
+        let mut kill_switch_allow_v4 = Vec::new();
+        // Add server IP (where auth-api and directory-api run) to allow list
+        if let Some(base_url) = &server_url {
+            if let Ok(url) = reqwest::Url::parse(base_url) {
+                if let Some(host_str) = url.host_str() {
+                    // Try to parse as IP directly
+                    if let Ok(ip) = host_str.parse::<std::net::IpAddr>() {
+                        kill_switch_allow_v4.push(ip.to_string());
+                    } else {
+                        // Resolve server hostname to IP
+                        if let Ok(Ok(addr)) = tokio::task::spawn_blocking({
+                            let host = host_str.to_string();
+                            move || {
+                                use std::net::ToSocketAddrs;
+                                format!("{}:8081", host).to_socket_addrs().and_then(|mut addrs| {
+                                    addrs.next().ok_or_else(|| {
+                                        std::io::Error::new(std::io::ErrorKind::Other, "no addresses found")
+                                    })
+                                })
+                            }
+                        }).await {
+                            kill_switch_allow_v4.push(addr.ip().to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        let mut allowed_ips = cfg.allowed_ips_v4.clone();
+        allowed_ips.extend(cfg.allowed_ips_v6.clone());
         
         let peer = AgentPeerRequest {
             public_key: cfg.entry.public_key.clone(),
