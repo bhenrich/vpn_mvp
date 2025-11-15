@@ -17,6 +17,8 @@ x-node-agent-base: &node-agent-base
     # Note: If DNS resolution fails during build, configure Docker daemon DNS:
     # Edit /etc/docker/daemon.json and add: {"dns": ["8.8.8.8", "1.1.1.1"]}
     # Then restart Docker: sudo systemctl restart docker
+    # Use host network during build so apt-get uses the same DNS as the host
+    network: host
   network_mode: host
   # DNS configuration for runtime (doesn't affect build-time)
   dns:
