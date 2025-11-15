@@ -84,7 +84,10 @@ EOF
 	# Keep container running for static mode
 	tail -f /dev/null
 else
-	exec node-agent
+	# Run node-agent - exec replaces this shell process
+	# If node-agent exits, the container will exit with its exit code
+	echo "starting node-agent..."
+	exec node-agent 2>&1
 fi
 
 
