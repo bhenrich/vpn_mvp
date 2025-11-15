@@ -112,6 +112,7 @@ services:
 
   node-agent-de-berlin:
     <<: *node-agent-base
+    restart: unless-stopped
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-berlin.dev.local
@@ -123,6 +124,7 @@ services:
 
   node-agent-de-munich:
     <<: *node-agent-base
+    restart: unless-stopped
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-munich.dev.local

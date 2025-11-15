@@ -4,9 +4,14 @@ echo "enabling IPv4 forwarding"
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 echo "starting unbound DNS (DoT) on :53"
 unbound -c /etc/unbound/unbound.conf &
+# Flush any existing rules in the vpn table to avoid conflicts
+nft flush table inet vpn 2>/dev/null || true
+nft delete table inet vpn 2>/dev/null || true
+
 if [ "${RUN_NFT_SETUP:-0}" = "1" ]; then
-	echo "applying nftables rules"
-	nft -f /etc/nftables.conf || echo "nftables apply failed"
+	echo "applying nftables rules from /etc/nftables.conf"
+	# Try to apply from file, but continue even if it fails (will use inline version below)
+	nft -f /etc/nftables.conf 2>&1 || echo "nftables apply from file failed, using inline rules"
 fi
 
 # Always apply nftables rules for forwarding and NAT (required for VPN to work)
