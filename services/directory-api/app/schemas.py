@@ -124,6 +124,7 @@ class MeshClientConfigRequest(BaseModel):
 
 
 class MeshClientConfigResponse(BaseModel):
+	session_id: uuid.UUID
 	device_id: uuid.UUID
 	client_ip_v4: IPvAnyAddress
 	client_ip_v6: Optional[IPvAnyAddress]
@@ -133,5 +134,23 @@ class MeshClientConfigResponse(BaseModel):
 	keepalive_seconds: int
 	entry: MeshClientPeer
 	exit: Optional[MeshClientPeer] = None
+
+
+class ConnectionSessionRead(BaseModel):
+	id: uuid.UUID
+	node_id: uuid.UUID
+	device_id: uuid.UUID
+	status: str
+	client_ip_v4: IPvAnyAddress
+	client_ip_v6: Optional[IPvAnyAddress]
+	allowed_ips_v4: list[str]
+	allowed_ips_v6: list[str]
+	dns_servers: list[IPvAnyAddress]
+	keepalive_seconds: int
+	started_at: datetime
+	ended_at: Optional[datetime]
+
+	class Config:
+		from_attributes = True
 
 

@@ -23,8 +23,8 @@ _registry_lock = asyncio.Lock()
 
 
 def _proto_src_dir() -> str:
-	# In image layout, /app/services/common/protos is alongside /app/app
-	root = Path(__file__).resolve().parents[1]  # /app
+	# In repo layout, services/common/protos sits two levels up from app/.
+	root = Path(__file__).resolve().parents[3]
 	return str((root / "services" / "common" / "protos").resolve())
 
 

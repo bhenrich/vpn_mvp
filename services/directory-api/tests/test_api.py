@@ -11,7 +11,7 @@ sys.path.insert(0, str((Path(__file__).resolve().parents[1]).resolve()))
 sys.path.insert(0, str((Path(__file__).resolve().parents[1] / "app" / "_gen").resolve()))
 
 # Avoid external services during tests
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./.pytest-directory-api.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.main import app  # noqa: E402
@@ -305,9 +305,18 @@ def test_device_register_and_client_config_flow() -> None:
 		resp = client.post("/mesh/client-config", json=config_payload)
 		assert resp.status_code == 200, resp.text
 		cfg = resp.json()
+		assert "session_id" in cfg
+		session_id = cfg["session_id"]
 		assert cfg["device_id"] == device_id
 		assert cfg["client_ip_v4"].startswith("10.66.0.")
 		assert cfg["allowed_ips_v4"] == ["0.0.0.0/0"]
 		assert cfg["entry"]["public_key"] == node_pk
 		assert cfg["entry"]["endpoint_host"] == "198.51.100.10"
+
+	# Disconnect session
+	resp = client.delete(f"/mesh/sessions/{session_id}")
+	assert resp.status_code == 200, resp.text
+	session = resp.json()
+	assert session["status"] == "ended"
+	assert session["id"] == session_id
 

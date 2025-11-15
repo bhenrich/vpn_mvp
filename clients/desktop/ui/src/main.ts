@@ -36,6 +36,29 @@ const $ = (id: string) => document.getElementById(id)!;
 const show = (el: HTMLElement) => el.classList.remove("hidden");
 const hide = (el: HTMLElement) => el.classList.add("hidden");
 
+// Error and status message helpers
+function showError(element: HTMLElement, message: string) {
+	element.textContent = message;
+	element.style.color = "#d32f2f";
+	show(element);
+	setTimeout(() => hide(element), 5000);
+}
+
+function showSuccess(element: HTMLElement, message: string) {
+	element.textContent = message;
+	element.style.color = "#2e7d32";
+	show(element);
+	setTimeout(() => hide(element), 3000);
+}
+
+function setLoading(button: HTMLButtonElement, loading: boolean) {
+	if (!button.dataset.originalText) {
+		button.dataset.originalText = button.textContent || "";
+	}
+	button.disabled = loading;
+	button.textContent = loading ? "Loading..." : button.dataset.originalText;
+}
+
 const onboardingEl = $("onboarding") as HTMLElement;
 const loginEl = $("login") as HTMLElement;
 const regionsEl = $("regions") as HTMLElement;
@@ -63,9 +86,19 @@ const checkUpdateBtn = $("check-update") as HTMLButtonElement;
 const logoutBtn = $("logout-btn") as HTMLButtonElement;
 const logoutBtnRegions = $("logout-btn-regions") as HTMLButtonElement;
 
+// Error/success message elements
+const serverMessageEl = $("server-message") as HTMLElement;
+const loginErrorEl = $("login-error") as HTMLElement;
+const deviceErrorEl = $("device-error") as HTMLElement;
+const regionErrorEl = $("region-error") as HTMLElement;
+const connectionErrorEl = $("connection-error") as HTMLElement;
+const connectionSuccessEl = $("connection-success") as HTMLElement;
+const connectionStatusEl = $("connection-status") as HTMLElement;
+
 let deviceState: DeviceStartOut | null = null;
 let selectedRegion: Region | null = null;
 let selectedMode: "single" | "multi" = "single";
+let devicePollInterval: number | null = null;
 
 function loadServerHost() {
 	try {
@@ -112,9 +145,10 @@ serverSaveBtn.addEventListener("click", async () => {
 		} catch {
 			// ignore
 		}
-		alert("Cleared server override; using default localhost configuration.");
+		showSuccess(serverMessageEl, "Cleared server override; using default localhost configuration.");
 		return;
 	}
+	setLoading(serverSaveBtn, true);
 	try {
 		await invoke("set_server_host", { host });
 		try {
@@ -122,9 +156,11 @@ serverSaveBtn.addEventListener("click", async () => {
 		} catch {
 			// ignore
 		}
-		alert("Server address saved.");
+		showSuccess(serverMessageEl, "Server address saved successfully.");
 	} catch (e: any) {
-		alert(`Failed to save server: ${e}`);
+		showError(serverMessageEl, `Failed to save server: ${e}`);
+	} finally {
+		setLoading(serverSaveBtn, false);
 	}
 });
 
@@ -133,8 +169,22 @@ async function refreshAppStatus() {
 		const status = await invoke<string>("app_status");
 		const session = await invoke<string>("session_status");
 		appStatusEl.textContent = `${status} • tunnel:${session}`;
+		
+		// Update connection status
+		if (session.includes("connected") || session.includes("Connected")) {
+			connectionStatusEl.textContent = "Connected";
+			connectionStatusEl.style.color = "#2e7d32";
+		} else if (session.includes("disconnected") || session.includes("Disconnected") || session === "unavailable") {
+			connectionStatusEl.textContent = "Disconnected";
+			connectionStatusEl.style.color = "#666";
+		} else {
+			connectionStatusEl.textContent = session;
+			connectionStatusEl.style.color = "#666";
+		}
 	} catch (e) {
 		appStatusEl.textContent = "error";
+		connectionStatusEl.textContent = "Unknown";
+		connectionStatusEl.style.color = "#666";
 	}
 }
 
@@ -182,9 +232,11 @@ loginSubmit.addEventListener("click", async () => {
 	const password = (document.getElementById("password") as HTMLInputElement).value;
 	const totp = (document.getElementById("totp") as HTMLInputElement).value.trim() || undefined;
 	if (!email || !password) {
-		alert("Enter email and password");
+		showError(loginErrorEl, "Please enter both email and password");
 		return;
 	}
+	hide(loginErrorEl);
+	setLoading(loginSubmit, true);
 	try {
 		await invoke<TokenResponse>("login", { req: { email, password, totpCode: totp } });
 		hide(loginEl);
@@ -192,15 +244,23 @@ loginSubmit.addEventListener("click", async () => {
 		await populateRegions();
 		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Login failed: ${e}`);
+		const errorMsg = typeof e === "string" ? e : e?.message || "Login failed. Please check your credentials.";
+		showError(loginErrorEl, errorMsg);
+	} finally {
+		setLoading(loginSubmit, false);
 	}
 });
 
 checkUpdateBtn.addEventListener("click", async () => {
+	setLoading(checkUpdateBtn, true);
 	try {
 		await invoke("update_check");
+		showSuccess(connectionSuccessEl, "Update check completed");
 	} catch (e: any) {
-		alert(`Update check failed: ${e}`);
+		const errorMsg = typeof e === "string" ? e : e?.message || "Update check failed";
+		showError(connectionErrorEl, errorMsg);
+	} finally {
+		setLoading(checkUpdateBtn, false);
 	}
 });
 
@@ -232,81 +292,140 @@ logoutBtnRegions.addEventListener("click", performLogout);
 
 deviceStartBtn.addEventListener("click", async () => {
 	const userHint = (document.getElementById("user-hint") as HTMLInputElement).value.trim() || undefined;
+	hide(deviceErrorEl);
+	setLoading(deviceStartBtn, true);
 	try {
 		deviceState = await invoke<DeviceStartOut>("device_login_start", { userHint });
 		deviceCodeEl.textContent = deviceState.device_code;
 		deviceStatusEl.textContent = "Waiting for authorization...";
 		show(deviceLoginStarted);
 		show(devicePollBtn);
+		
+		// Start auto-polling
+		if (devicePollInterval) {
+			clearInterval(devicePollInterval);
+		}
+		devicePollInterval = window.setInterval(async () => {
+			if (!deviceState) return;
+			try {
+				await invoke<TokenResponse>("device_login_poll", {
+					deviceCode: deviceState.device_code,
+					codeVerifier: deviceState.code_verifier
+				});
+				deviceStatusEl.textContent = "Authorized";
+				if (devicePollInterval) {
+					clearInterval(devicePollInterval);
+					devicePollInterval = null;
+				}
+				hide(loginEl);
+				show(regionsEl);
+				await populateRegions();
+				await refreshAppStatus();
+			} catch (e: any) {
+				// Still pending, continue polling
+				deviceStatusEl.textContent = "Waiting for authorization...";
+			}
+		}, deviceState.interval * 1000);
 	} catch (e: any) {
-		alert(`Device login start failed: ${e}`);
+		const errorMsg = typeof e === "string" ? e : e?.message || "Failed to start device login";
+		showError(deviceErrorEl, errorMsg);
+	} finally {
+		setLoading(deviceStartBtn, false);
 	}
 });
 
 devicePollBtn.addEventListener("click", async () => {
 	if (!deviceState) return;
+	setLoading(devicePollBtn, true);
 	try {
 		await invoke<TokenResponse>("device_login_poll", {
 			deviceCode: deviceState.device_code,
 			codeVerifier: deviceState.code_verifier
 		});
 		deviceStatusEl.textContent = "Authorized";
+		if (devicePollInterval) {
+			clearInterval(devicePollInterval);
+			devicePollInterval = null;
+		}
 		hide(loginEl);
 		show(regionsEl);
 		await populateRegions();
 		await refreshAppStatus();
 	} catch (e: any) {
 		deviceStatusEl.textContent = "Authorization pending...";
+	} finally {
+		setLoading(devicePollBtn, false);
 	}
 });
 
 saveRegionBtn.addEventListener("click", async () => {
 	const id = regionSelect.value;
-	if (!id) return;
+	if (!id) {
+		showError(regionErrorEl, "Please select a region");
+		return;
+	}
 	const mode = (modeSelect.value === "multi" ? "multi" : "single") as "single" | "multi";
+	hide(regionErrorEl);
+	setLoading(saveRegionBtn, true);
 	// Validate via backend (directory-api) path selection
 	try {
 		await invoke("validate_mesh_selection", { regionId: id, mode });
+		// persist locally
+		try {
+			localStorage.setItem("selected-region-id", id);
+			localStorage.setItem("selected-mode", mode);
+		} catch {
+			// ignore
+		}
+		// reflect in UI
+		const text = regionSelect.options[regionSelect.selectedIndex]?.textContent || "None";
+		selectedRegionEl.textContent = `${text} • ${mode === "multi" ? "Multi-hop" : "Single"}` || "None";
+		hide(regionsEl);
+		show(statusEl);
+		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Selection invalid: ${e}`);
-		return;
+		const errorMsg = typeof e === "string" ? e : e?.message || "Invalid region selection";
+		showError(regionErrorEl, errorMsg);
+	} finally {
+		setLoading(saveRegionBtn, false);
 	}
-	// persist locally
-	try {
-		localStorage.setItem("selected-region-id", id);
-		localStorage.setItem("selected-mode", mode);
-	} catch {
-		// ignore
-	}
-	// reflect in UI
-	const text = regionSelect.options[regionSelect.selectedIndex]?.textContent || "None";
-	selectedRegionEl.textContent = `${text} • ${mode === "multi" ? "Multi-hop" : "Single"}` || "None";
-	hide(regionsEl);
-	show(statusEl);
-	await refreshAppStatus();
 });
 
 bgStartBtn.addEventListener("click", async () => {
 	const regionId = localStorage.getItem("selected-region-id");
 	if (!regionId) {
-		alert("Select a region before connecting.");
+		showError(connectionErrorEl, "Please select a region before connecting");
 		return;
 	}
 	const mode = (localStorage.getItem("selected-mode") === "multi" ? "multi" : "single");
+	hide(connectionErrorEl);
+	hide(connectionSuccessEl);
+	setLoading(bgStartBtn, true);
 	try {
 		await invoke("connect_session", { regionId, mode, fullTunnel: true });
+		showSuccess(connectionSuccessEl, "Successfully connected to VPN");
 		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Failed to connect: ${e}`);
+		const errorMsg = typeof e === "string" ? e : e?.message || "Failed to connect. Please try again.";
+		showError(connectionErrorEl, errorMsg);
+	} finally {
+		setLoading(bgStartBtn, false);
 	}
 });
 
 bgStopBtn.addEventListener("click", async () => {
+	hide(connectionErrorEl);
+	hide(connectionSuccessEl);
+	setLoading(bgStopBtn, true);
 	try {
 		await invoke("disconnect_session");
+		showSuccess(connectionSuccessEl, "Disconnected from VPN");
 		await refreshAppStatus();
 	} catch (e: any) {
-		alert(`Failed to disconnect: ${e}`);
+		const errorMsg = typeof e === "string" ? e : e?.message || "Failed to disconnect";
+		showError(connectionErrorEl, errorMsg);
+	} finally {
+		setLoading(bgStopBtn, false);
 	}
 });
 
@@ -362,6 +481,15 @@ async function init() {
 		hide(statusEl);
 		show(loginEl);
 	}
+	
+	// Set up periodic status refresh (every 5 seconds)
+	setInterval(async () => {
+		try {
+			await refreshAppStatus();
+		} catch (e) {
+			console.error("Status refresh failed:", e);
+		}
+	}, 5000);
 }
 
 init();

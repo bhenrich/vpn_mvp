@@ -2,7 +2,10 @@
 
 Directory/topology service for node registry, regions catalog, and config distribution.
 
-Quick start:
+- See `DEVELOPMENT.md` for local setup, environment configuration, and testing.
+- See `DEPLOYMENT.md` for container build, configuration, and deployment notes.
+
+## Quick start (dev)
 
 1. Copy environment template:
 
@@ -39,6 +42,9 @@ HTTP API
 - `GET /nodes`: list nodes.
 - `POST /nodes/register`: register/update node metadata.
 - `POST /nodes/heartbeat`: update node status and last_seen.
+- `POST /devices/register`: register/update a client device (requires bearer token).
+- `POST /mesh/client-config`: allocate client IP + session for a region/mode and push the peer config to the selected node.
+- `DELETE /mesh/sessions/{session_id}`: terminate a client session and remove the peer on the node.
 
 gRPC API (skeleton)
 

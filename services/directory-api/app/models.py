@@ -99,6 +99,7 @@ class Node(Base):
 	wg_rs_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 	last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+	sessions: Mapped[list["ConnectionSession"]] = relationship(back_populates="node", cascade="all, delete-orphan")
 
 	def touch(self) -> None:
 		self.last_seen_at = datetime.now(timezone.utc)
@@ -122,6 +123,7 @@ class ClientDevice(Base):
 	__table_args__ = (
 		UniqueConstraint("user_id", "device_name", name="uq_client_device_user_name"),
 	)
+	sessions: Mapped[list["ConnectionSession"]] = relationship(back_populates="device", cascade="all, delete-orphan")
 
 	def touch(self) -> None:
 		now = _utcnow()
@@ -136,5 +138,29 @@ class ClientDevice(Base):
 		Used by Pydantic `from_attributes` when serializing `DeviceRead`.
 		"""
 		return self.wg_pubkey
+
+
+class ConnectionSession(Base):
+	__tablename__ = "connection_sessions"
+
+	id: Mapped[uuid.UUID] = mapped_column(UuidCompat(), primary_key=True, default=uuid.uuid4)
+	node_id: Mapped[uuid.UUID] = mapped_column(UuidCompat(), ForeignKey("nodes.id"), nullable=False)
+	device_id: Mapped[uuid.UUID] = mapped_column(UuidCompat(), ForeignKey("client_devices.id"), nullable=False)
+	status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+	client_ip_v4: Mapped[str] = mapped_column(InetCompat(), nullable=False)
+	client_ip_v6: Mapped[str | None] = mapped_column(InetCompat(), nullable=True)
+	allowed_ips_v4: Mapped[list[str]] = mapped_column(JsonCompat(), nullable=False, default=list)
+	allowed_ips_v6: Mapped[list[str]] = mapped_column(JsonCompat(), nullable=False, default=list)
+	dns_servers: Mapped[list[str]] = mapped_column(JsonCompat(), nullable=False, default=list)
+	keepalive_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
+	started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+	ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+	node: Mapped[Node] = relationship(back_populates="sessions")
+	device: Mapped[ClientDevice] = relationship(back_populates="sessions")
+
+	def mark_ended(self) -> None:
+		self.status = "ended"
+		self.ended_at = _utcnow()
 
 

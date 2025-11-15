@@ -1,8 +1,11 @@
 # admin-api (FastAPI skeleton)
 
-Minimal scaffold for admin/fleet control service.
+Admin/fleet control service (WS4).
 
-Quick start:
+- See `DEVELOPMENT.md` for local setup, environment configuration, and testing.
+- See `DEPLOYMENT.md` for container build, configuration, and deployment patterns.
+
+## Quick start (dev)
 
 1. Copy environment template:
 

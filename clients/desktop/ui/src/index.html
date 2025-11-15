@@ -17,6 +17,10 @@
 		.row > * { flex: 1; }
 		.hidden { display: none; }
 		.status { font-weight: bold; }
+		.error { color: #d32f2f; font-size: 14px; margin-top: 8px; }
+		.success { color: #2e7d32; font-size: 14px; margin-top: 8px; }
+		.loading { opacity: 0.6; pointer-events: none; }
+		button:disabled { opacity: 0.6; cursor: not-allowed; }
 	</style>
 </head>
 <body>
@@ -51,6 +55,7 @@
 				Enter the IP or hostname of the machine running the VPN backend (auth + directory APIs).
 				Leave empty to use the default <code>127.0.0.1</code> on this device.
 			</p>
+			<div id="server-message" class="hidden" style="margin-top: 8px;"></div>
 			<br />
 			<button id="server-save">Save server</button>
 		</div>
@@ -63,7 +68,8 @@
 				<input id="password" type="password" placeholder="********" />
 				<label for="totp">TOTP (optional)</label>
 				<input id="totp" type="text" placeholder="123456" />
-				<br /><br />
+				<div id="login-error" class="error hidden"></div>
+				<br />
 				<button id="login-submit">Sign in</button>
 			</div>
 			<div>
@@ -72,11 +78,14 @@
 				<label for="user-hint">User hint (email)</label>
 				<input id="user-hint" type="email" placeholder="you@example.com" />
 				<div id="device-login-started" class="hidden">
-					<p>Device code: <code id="device-code"></code></p>
+					<p style="margin-top: 12px;"><strong>Device code:</strong> <code id="device-code" style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px;"></code></p>
 					<p>Status: <span id="device-status">Waiting for authorization...</span></p>
+					<p style="font-size: 12px; color: #555;">Visit the device authorization page and enter this code. This window will automatically check for authorization.</p>
 				</div>
+				<div id="device-error" class="error hidden"></div>
+				<br />
 				<button id="device-start">Start device login</button>
-				<button id="device-poll" class="hidden">Poll</button>
+				<button id="device-poll" class="hidden">Check status</button>
 			</div>
 		</div>
 	</section>
@@ -90,7 +99,8 @@
 			<option value="single">Single-server</option>
 			<option value="multi">Multi-hop</option>
 		</select>
-		<br /><br />
+		<div id="region-error" class="error hidden"></div>
+		<br />
 		<div>
 		<button id="save-region">Save</button>
 			<button id="logout-btn-regions" style="margin-left: 8px;">Logout</button>
@@ -101,6 +111,10 @@
 		<h2>Status</h2>
 		<p>App status: <span class="status" id="app-status">Unknown</span></p>
 		<p>Selected region: <span id="selected-region">None</span></p>
+		<p>Connection: <span class="status" id="connection-status">Disconnected</span></p>
+		<div id="connection-error" class="error hidden"></div>
+		<div id="connection-success" class="success hidden"></div>
+		<br />
 		<div>
 			<button id="bg-start">Connect</button>
 			<button id="bg-stop">Disconnect</button>

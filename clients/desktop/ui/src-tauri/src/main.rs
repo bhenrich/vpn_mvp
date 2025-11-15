@@ -31,6 +31,7 @@ struct AppState {
     token_store: Arc<Mutex<Option<TokenResponse>>>,
     bg: Arc<Mutex<BackgroundService>>,
     device: Arc<Mutex<DeviceStore>>,
+    active_session: Arc<Mutex<Option<Uuid>>>,
 }
 
 impl AppState {
@@ -48,6 +49,7 @@ impl AppState {
             token_store: Arc::new(Mutex::new(None)),
             bg: Arc::new(Mutex::new(BackgroundService::new())),
             device: Arc::new(Mutex::new(DeviceStore::default())),
+            active_session: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -175,6 +177,7 @@ struct MeshClientConfigRequest {
 
 #[derive(Debug, Deserialize)]
 struct MeshClientConfigResponse {
+    session_id: Uuid,
     device_id: Uuid,
     client_ip_v4: String,
     client_ip_v6: Option<String>,
@@ -454,12 +457,23 @@ async fn connect_session(
             device.id,
         )
         .await?;
+    let session_id = cfg.session_id;
     let request = state.build_agent_connect_request(&device, &cfg);
-    state.agent_post("/connect", Some(&request)).await
+    if let Err(err) = state.agent_post("/connect", Some(&request)).await {
+        let _ = state.disconnect_remote_session(session_id).await;
+        return Err(err);
+    }
+    state.set_active_session(Some(session_id)).await;
+    Ok(())
 }
 
 #[tauri::command]
 async fn disconnect_session(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(session_id) = state.take_active_session().await {
+        if let Err(err) = state.disconnect_remote_session(session_id).await {
+            eprintln!("failed to terminate remote session: {err}");
+        }
+    }
     state
         .agent_post::<AgentConnectRequest>("/disconnect", None)
         .await
@@ -484,7 +498,10 @@ async fn logout(state: State<'_, AppState>) -> Result<(), String> {
     // Clear token store
     *state.token_store.lock().await = None;
     // Disconnect any active session
-    let _ = state.agent_post::<AgentConnectRequest>("/disconnect", None).await;
+    state.set_active_session(None).await;
+    let _ = state
+        .agent_post::<AgentConnectRequest>("/disconnect", None)
+        .await;
     Ok(())
 }
 
@@ -516,6 +533,16 @@ impl AppState {
             .as_ref()
             .map(|t| t.access_token.clone())
             .ok_or_else(|| "not authenticated".to_string())
+    }
+
+    async fn set_active_session(&self, session_id: Option<Uuid>) {
+        let mut guard = self.active_session.lock().await;
+        *guard = session_id;
+    }
+
+    async fn take_active_session(&self) -> Option<Uuid> {
+        let mut guard = self.active_session.lock().await;
+        guard.take()
     }
 
     async fn ensure_device_identity(&self, token: &str) -> Result<DeviceIdentity, String> {
@@ -689,6 +716,28 @@ impl AppState {
         }
     }
 
+    async fn disconnect_remote_session(&self, session_id: Uuid) -> Result<(), String> {
+        let token = self.access_token().await?;
+        let url = {
+            let server = self.server.lock().await;
+            format!("{}/mesh/sessions/{}", server.base_directory_url, session_id)
+        };
+        let client = reqwest::Client::new();
+        let resp = client
+            .delete(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "session disconnect failed".into()));
+        }
+        Ok(())
+    }
+
     async fn agent_post<T: Serialize>(&self, path: &str, body: Option<&T>) -> Result<(), String> {
         let url = format!("{}/{}", agent_base_url(), path.trim_start_matches('/'));
         let client = reqwest::Client::new();
@@ -795,7 +844,7 @@ async fn start_autoconnect(
                 .status(&name)
                 .await
                 .unwrap_or(vpn_core::ConnectionState::Unknown);
-            
+
             // Log connection status changes
             match status {
                 vpn_core::ConnectionState::Connected => {
@@ -804,7 +853,7 @@ async fn start_autoconnect(
                         eprintln!("[VPN] Connection established - Windows is now routing traffic through VPN");
                         connection_logged = true;
                     }
-                    
+
                     // Log packet stats every 5 seconds
                     if last_stats_time.elapsed().as_secs() >= 5 {
                         let _ = log_vpn_packet_stats(&*exec, &name).await;
@@ -820,7 +869,7 @@ async fn start_autoconnect(
                 }
                 _ => {}
             }
-            
+
             if trusted {
                 if matches!(
                     status,
@@ -928,7 +977,7 @@ async fn log_vpn_packet_stats(
                 }
             }
         }
-        
+
         // Also check rasdial for connection details
         let args = ["rasdial", profile_name];
         let out = exec.run(args[0], &args[1..]).await?;

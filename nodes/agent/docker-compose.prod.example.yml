@@ -1,0 +1,66 @@
+# Production Docker Compose example for node-agent
+# Copy this file and customize for your deployment
+
+version: "3.9"
+
+services:
+  node-agent:
+    image: registry.example.com/vpn/node-agent:v1.0.0
+    container_name: node-agent-us-west
+    restart: unless-stopped
+    
+    # Required capabilities for WireGuard and network management
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    
+    # Memory-only filesystems for sensitive data
+    tmpfs:
+      - /etc/wireguard:rw,noexec,nosuid,nodev,mode=0700
+      - /var/run/vpn:rw,noexec,nosuid,nodev,mode=0700
+    
+    # Expose WireGuard UDP port
+    ports:
+      - "51820:51820/udp"
+    
+    environment:
+      # Control plane endpoints
+      DIRECTORY_HTTP_ADDR: https://directory-api.example.com:8081
+      DIRECTORY_GRPC_ADDR: https://directory-api.example.com:50051
+      
+      # Node identity (REQUIRED)
+      PUBLIC_ENDPOINT: vpn-us-west.example.com:51820
+      NODE_REGION_CODE: US
+      NODE_REGION_CITY: "San Francisco"
+      NODE_EGRESS_IPS: 203.0.113.10
+      
+      # WireGuard configuration
+      WG_LISTEN_PORT: 51820
+      WG_ADDRESS: 10.66.0.1/24
+      
+      # Security
+      MTLS_ENABLED: "1"
+      MTLS_CA_CERT_PATH: /certs/ca.crt
+      MTLS_CLIENT_CERT_PATH: /certs/node.crt
+      MTLS_CLIENT_KEY_PATH: /certs/node.key
+      
+      # Firewall
+      RUN_NFT_SETUP: "1"
+    
+    volumes:
+      # Mount mTLS certificates (read-only)
+      - ./certs:/certs:ro
+    
+    healthcheck:
+      test: ["CMD", "wg", "show", "wg0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

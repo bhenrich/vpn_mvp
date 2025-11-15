@@ -2,7 +2,10 @@
 
 Authentication and user management service (WS2).
 
-Quick start:
+- See `DEVELOPMENT.md` for local setup, environment configuration, and testing.
+- See `DEPLOYMENT.md` for container build, configuration, and production deployment notes.
+
+## Quick start (dev)
 
 1. Copy environment template:
 
@@ -22,7 +25,7 @@ Quick start:
    curl http://localhost:8080/healthz
    ```
 
-Endpoints (dev):
+## Example endpoints (dev):
 
 - JWKS:
 

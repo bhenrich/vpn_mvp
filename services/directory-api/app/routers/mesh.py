@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
-from app.models import Node, Region, ClientDevice
+from app.models import Node, Region, ClientDevice, ConnectionSession
 from app.schemas import (
 	MeshPathRequest,
 	MeshPathResponse,
@@ -16,6 +16,7 @@ from app.schemas import (
 	MeshClientConfigRequest,
 	MeshClientConfigResponse,
 	MeshClientPeer,
+	ConnectionSessionRead,
 )
 from app.grpc_server import enqueue_config_for_public_key
 from app.security import require_operator, verify_bearer
@@ -94,10 +95,20 @@ async def _provision_client_peer(node: Node, device: ClientDevice, client_ip_v4:
 	await enqueue_config_for_public_key(node.public_key, wg_conf)
 
 
+def _build_client_peer_remove(device: ClientDevice) -> bytes:
+	lines: list[str] = ["[Peer]", f"PublicKey = {device.wg_pubkey}", "Remove = true", ""]
+	return "\n".join(lines).encode("utf-8")
+
+
+async def _deprovision_client_peer(node: Node, device: ClientDevice) -> None:
+	wg_conf = _build_client_peer_remove(device)
+	await enqueue_config_for_public_key(node.public_key, wg_conf)
+
+
 @router.post("/path", response_model=MeshPathResponse)
 async def select_path(
 	payload: MeshPathRequest,
-	_: dict = Depends(require_operator),
+	_: dict = Depends(verify_bearer),
 	db: AsyncSession = Depends(get_db_session),
 ) -> MeshPathResponse:
 	await _get_region(db, payload.region_id)
@@ -131,7 +142,7 @@ async def apply_path(
 	db: AsyncSession = Depends(get_db_session),
 ) -> MeshPathResponse:
 	# Reuse selection logic
-	selection = await select_path(payload, db)
+	selection = await select_path(payload, db=db)
 
 	# Fetch full node records
 	result = await db.execute(select(Node).where(Node.public_key.in_(
@@ -186,7 +197,7 @@ async def client_config(
 
 	allowed_ips_v4 = ["0.0.0.0/0"] if payload.full_tunnel else ["10.66.0.0/24"]
 	allowed_ips_v6 = ["::/0"] if payload.full_tunnel and payload.ipv6 else []
-	dns_servers = ["10.66.0.1"]
+	dns_servers: list[str] = ["10.66.0.1"]
 
 	entry_host, entry_port = _resolve_endpoint(entry)
 	entry_peer = MeshClientPeer(
@@ -208,11 +219,26 @@ async def client_config(
 			endpoint_port=exit_port,
 		)
 
+	session = ConnectionSession(
+		node_id=entry.id,
+		device_id=device.id,
+		status="active",
+		client_ip_v4=client_ip_v4,
+		client_ip_v6=device.client_ip_v6,
+		allowed_ips_v4=allowed_ips_v4,
+		allowed_ips_v6=allowed_ips_v6,
+		dns_servers=dns_servers,
+		keepalive_seconds=25,
+	)
+	db.add(session)
+
 	await _provision_client_peer(entry, device, client_ip_v4)
 	await db.commit()
 	await db.refresh(device)
+	await db.refresh(session)
 
 	return MeshClientConfigResponse(
+		session_id=session.id,
 		device_id=device.id,
 		client_ip_v4=client_ip_v4,
 		client_ip_v6=device.client_ip_v6,
@@ -223,5 +249,37 @@ async def client_config(
 		entry=entry_peer,
 		exit=exit_peer,
 	)
+
+
+@router.delete("/sessions/{session_id}", response_model=ConnectionSessionRead)
+async def disconnect_session(
+	session_id: uuid.UUID,
+	claims: dict[str, Any] = Depends(verify_bearer),
+	db: AsyncSession = Depends(get_db_session),
+) -> ConnectionSession:
+	user_id = _claims_user_id(claims)
+
+	session = await db.get(ConnectionSession, session_id)
+	if session is None:
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+	device = await db.get(ClientDevice, session.device_id)
+	if device is None or device.user_id != user_id:
+		raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+	node = await db.get(Node, session.node_id)
+	if node is None:
+		raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="node missing for session")
+
+	if session.status == "active":
+		session.mark_ended()
+		await _deprovision_client_peer(node, device)
+		await db.commit()
+		await db.refresh(session)
+	else:
+		await db.commit()
+		await db.refresh(session)
+
+	return session
 
 
