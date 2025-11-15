@@ -1,8 +1,9 @@
 # version tag is obsolete, do not re-add
 
 x-node-agent-env: &node-agent-env
-  DIRECTORY_HTTP_ADDR: http://directory-api:8081
-  DIRECTORY_GRPC_ADDR: http://directory-api:50051
+  # Use localhost since node agents use host networking on Linux
+  DIRECTORY_HTTP_ADDR: http://localhost:8081
+  DIRECTORY_GRPC_ADDR: http://localhost:50051
   RUN_NFT_SETUP: "1" # Enable nftables rules for forwarding and NAT
   WG_SERVER_KEY_PATH: /var/run/vpn/server.key
   MTLS_ENABLED: "${MTLS_ENABLED:-0}"
@@ -111,8 +112,6 @@ services:
 
   node-agent-de-berlin:
     <<: *node-agent-base
-    ports:
-      - "51820:51820/udp"
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-berlin.dev.local
@@ -124,8 +123,6 @@ services:
 
   node-agent-de-munich:
     <<: *node-agent-base
-    ports:
-      - "51821:51821/udp"
     environment:
       <<: *node-agent-env
       PUBLIC_ENDPOINT: de-munich.dev.local
