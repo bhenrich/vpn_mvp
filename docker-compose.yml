@@ -12,6 +12,7 @@ x-node-agent-env: &node-agent-env
 
 x-node-agent-base: &node-agent-base
   build: ./nodes/agent
+  network_mode: host
   cap_add:
     - NET_ADMIN
     - SYS_MODULE
