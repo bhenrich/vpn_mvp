@@ -28,7 +28,7 @@ This guide walks through testing the VPN system with two nodes running on a Wind
 │                 │         │  └────────────┘  │
 │                 │         │                  │
 │                 │         │  ┌────────────┐  │
-│                 │         │  │ node-agent  │  │
+│                 │         │  │ node-agent │  │
 │                 │────────▶│  │ -de-berlin │  │
 │                 │         │  └────────────┘  │
 │                 │         │                  │
