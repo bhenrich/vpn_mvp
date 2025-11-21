@@ -1239,11 +1239,3 @@ git push origin $VERSION
 echo "✅ Release $VERSION prepared successfully!"
 echo "GitHub Actions will handle building and publishing artifacts."
 ```
-
----
-
-For more detailed information on specific tools and workflows, see:
-- [Development Setup Guide](../../CONTRIBUTING.md)
-- [Testing Documentation](../../TESTING.md)
-- [Security Documentation](../security/)
-- [Operations Guide](../ops/INDEX.md)

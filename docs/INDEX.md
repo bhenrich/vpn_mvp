@@ -4,8 +4,8 @@
 
 ## 📚 Core Documentation
 
-- [**Overview**](./OVERVIEW.md)  
-  _Product philosophy, repo map, delivery principles, and getting started guide._
+- [**Contributors Guide**](../CONTRIBUTING.md)  
+  _The first place to check if you are planning on contributing._
 
 - [**System Architecture**](./architecture/ARCHITECTURE.md)  
   _How clients, control-plane, nodes, and observability pieces fit together._
