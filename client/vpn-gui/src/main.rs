@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
 use vpn_core::{
 	AuthMethod, CredentialStore, DnsSettings, FileProfileStore, OsKeyringCredentialStore, RealCommandExecutor,
 	SplitTunnel, VpnAdapter, VpnProfile,
 };
 use vpn_core::ProfileStore;
-use vpn_core::{AuthApiClient, TokenStore, ServerProfile};
+use vpn_core::{AuthApiClient, TokenStore, ServerProfile, LoginResponse};
 
 #[cfg(target_os = "windows")]
 use platform_windows::WindowsAdapter;
@@ -26,16 +26,18 @@ struct VpnApp {
 	creds_store: Arc<OsKeyringCredentialStore>,
 	rt: Arc<tokio::runtime::Runtime>,
 	auth: AuthApiClient,
-	tokens: TokenStore,
+	tokens: Arc<TokenStore>,
 
 	// UI state
 	profiles: Vec<VpnProfile>,
 	selected: Option<usize>,
+	pending_select_name: Option<String>,
 
 	// Auth state
 	email: String,
 	password: String,
 	access_token: Option<String>,
+	current_profile_name: Option<String>,
 
 	// Add form state
 	add_name: String,
@@ -63,7 +65,7 @@ enum Msg {
 	EmailChanged(String),
 	PasswordChanged(String),
 	Login,
-	LoggedIn(Result<String, String>),
+	LoggedIn(Result<LoginResponse, String>),
 	ProfileFetched(Result<ServerProfile, String>),
 
 	AddNameChanged(String),
@@ -100,7 +102,7 @@ impl Application for VpnApp {
 		let creds_store = Arc::new(OsKeyringCredentialStore);
 		let rt = Arc::new(tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio rt"));
 		let auth = AuthApiClient::new_from_env().expect("auth");
-		let tokens = TokenStore::new();
+		let tokens = Arc::new(TokenStore::new());
 
 		#[cfg(target_os = "windows")]
 		let adapter = Arc::new(WindowsAdapter::new(exec.clone(), creds_store.clone(), profiles_store.clone()))
@@ -121,9 +123,11 @@ impl Application for VpnApp {
 				tokens,
 				profiles: Vec::new(),
 				selected: None,
+				pending_select_name: None,
 				email: String::new(),
 				password: String::new(),
 				access_token: None,
+				current_profile_name: None,
 				add_name: String::new(),
 				add_server: String::new(),
 				add_remote_id: String::new(),
@@ -147,12 +151,18 @@ impl Application for VpnApp {
 			Msg::Noop => Command::none(),
 			Msg::LoadProfiles => {
 				let store = self.profiles_store.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(store.list()).map_err(|e| e.to_string()) }, Msg::ProfilesLoaded);
+				return Command::perform(async move { store.list().await.map_err(|e| e.to_string()) }, Msg::ProfilesLoaded);
 			}
 			Msg::ProfilesLoaded(res) => {
 				match res {
-					Ok(list) => self.profiles = list,
+					Ok(list) => {
+						self.profiles = list;
+						if let Some(name) = self.pending_select_name.take() {
+							if let Some((idx, _)) = self.profiles.iter().enumerate().find(|(_, p)| p.name == name) {
+								self.selected = Some(idx);
+							}
+						}
+					},
 					Err(err) => self.status_message = format!("Failed to load profiles: {err}"),
 				}
 				Command::none()
@@ -169,23 +179,31 @@ impl Application for VpnApp {
 				let email = self.email.clone();
 				let password = self.password.clone();
 				let auth = self.auth.clone();
-				let rt = self.rt.clone();
 				return Command::perform(
 					async move {
-						let resp = rt.block_on(auth.login(&email, &password)).map_err(|e| e.to_string())?;
-						Ok::<String, String>(resp.access_token)
+						auth.login(&email, &password).await.map_err(|e| e.to_string())
 					},
 					Msg::LoggedIn,
 				);
 			}
 			Msg::LoggedIn(res) => {
 				match res {
-					Ok(token) => {
+					Ok(resp) => {
 						self.status_message = "Logged in".into();
-						self.access_token = Some(token.clone());
+						self.access_token = Some(resp.access_token.clone());
+						// Save tokens and fetch profile
+						let email = self.email.clone();
+						let tokens = self.tokens.clone();
+						let access = resp.access_token.clone();
+						let refresh = resp.refresh_token.clone();
 						let auth = self.auth.clone();
-						let rt = self.rt.clone();
-						return Command::perform(async move { rt.block_on(auth.fetch_profile(&token)).map_err(|e| e.to_string()) }, Msg::ProfileFetched);
+						let token_for_profile = resp.access_token.clone();
+						return Command::perform(async move {
+							// Save tokens first
+							let _ = tokens.save(&email, &access, &refresh).await;
+							// Then fetch profile
+							auth.fetch_profile(&token_for_profile).await.map_err(|e| e.to_string())
+						}, Msg::ProfileFetched);
 					}
 					Err(err) => self.status_message = format!("Login failed: {err}"),
 				}
@@ -194,10 +212,17 @@ impl Application for VpnApp {
 			Msg::ProfileFetched(res) => {
 				match res {
 					Ok(sp) => {
+						let server = sp.server.as_deref().unwrap_or("").to_string();
+						if server.is_empty() {
+							self.status_message = "Profile missing server address".into();
+							return Command::none();
+						}
+						// Map Docker service name to localhost for client
+						let server = if server == "openvpn" { "localhost".to_string() } else { server };
 						let name = sp.infer_profile_name();
 						let profile = VpnProfile {
 							name: name.clone(),
-							server: sp.server.unwrap_or_default(),
+							server,
 							remote_id: sp.remote_id,
 							auth: AuthMethod::EapMsChapV2 {
 								username: sp.username.clone().or_else(|| if self.email.trim().is_empty() { None } else { Some(self.email.trim().to_string()) }),
@@ -209,12 +234,12 @@ impl Application for VpnApp {
 						let store = self.creds_store.clone();
 						let email = self.email.clone();
 						let pass = self.password.clone();
-						let rt = self.rt.clone();
+						self.current_profile_name = Some(name.clone());
 						return Command::perform(async move {
-							rt.block_on(adapter.add_profile(profile)).map_err(|e| e.to_string())?;
+							adapter.add_profile(profile).await.map_err(|e| e.to_string())?;
 							let user = sp.username.as_deref().unwrap_or_else(|| email.as_str());
 							let pwd = sp.password.as_deref().unwrap_or_else(|| pass.as_str());
-							rt.block_on(store.set_password(&name, user, pwd)).map_err(|e| e.to_string())?;
+							store.set_password(&name, user, pwd).await.map_err(|e| e.to_string())?;
 							Ok::<(), String>(())
 						}, Msg::Added);
 					}
@@ -264,8 +289,7 @@ impl Application for VpnApp {
 					},
 				};
 				let adapter = self.adapter.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(adapter.add_profile(profile)).map_err(|e| e.to_string()) }, Msg::Added);
+				return Command::perform(async move { adapter.add_profile(profile).await.map_err(|e| e.to_string()) }, Msg::Added);
 			}
 			Msg::Added(res) => {
 				match res {
@@ -291,8 +315,7 @@ impl Application for VpnApp {
 				let user = self.creds_username.clone();
 				let pass = self.creds_password.clone();
 				let store = self.creds_store.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(store.set_password(&name, &user, &pass)).map_err(|e| e.to_string()) }, Msg::CredsSet);
+				return Command::perform(async move { store.set_password(&name, &user, &pass).await.map_err(|e| e.to_string()) }, Msg::CredsSet);
 			}
 			Msg::CredsSet(res) => {
 				match res {
@@ -302,11 +325,12 @@ impl Application for VpnApp {
 				Command::none()
 			}
 			Msg::Connect => {
-				let Some(idx) = self.selected else { return Command::none() };
-				let name = self.profiles[idx].name.clone();
+				let Some(name) = self.current_profile_name.clone() else {
+					self.status_message = "No profile available. Login first.".into();
+					return Command::none();
+				};
 				let adapter = self.adapter.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(adapter.connect(&name)).map_err(|e| e.to_string()) }, Msg::Connected);
+				return Command::perform(async move { adapter.connect(&name).await.map_err(|e| e.to_string()) }, Msg::Connected);
 			}
 			Msg::Connected(res) => {
 				match res {
@@ -319,8 +343,7 @@ impl Application for VpnApp {
 				let Some(idx) = self.selected else { return Command::none() };
 				let name = self.profiles[idx].name.clone();
 				let adapter = self.adapter.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(adapter.disconnect(&name)).map_err(|e| e.to_string()) }, Msg::Disconnected);
+				return Command::perform(async move { adapter.disconnect(&name).await.map_err(|e| e.to_string()) }, Msg::Disconnected);
 			}
 			Msg::Disconnected(res) => {
 				match res {
@@ -333,8 +356,7 @@ impl Application for VpnApp {
 				let Some(idx) = self.selected else { return Command::none() };
 				let name = self.profiles[idx].name.clone();
 				let adapter = self.adapter.clone();
-				let rt = self.rt.clone();
-				return Command::perform(async move { rt.block_on(adapter.remove_profile(&name)).map_err(|e| e.to_string()) }, Msg::Removed);
+				return Command::perform(async move { adapter.remove_profile(&name).await.map_err(|e| e.to_string()) }, Msg::Removed);
 			}
 			Msg::Removed(res) => {
 				match res {
@@ -350,51 +372,13 @@ impl Application for VpnApp {
 	}
 
 	fn view(&self) -> Element<Self::Message> {
-		let children: Vec<Element<Msg>> = self
-			.profiles
-			.iter()
-			.enumerate()
-			.map(|(i, p)| {
-				let selected = self.selected == Some(i);
-				let label = format!("{} -> {}", p.name, p.server);
-				button(text(label))
-					.on_press(Msg::SelectProfile(i))
-					.style(if selected { iced::theme::Button::Primary } else { iced::theme::Button::Secondary })
-					.width(Length::Fill)
-					.into()
-			})
-			.collect();
-
-		let list = scrollable(column(children).spacing(8))
-		.height(Length::Fill);
-
 		let controls = column![
 			text("Login").size(20),
 			text_input("Email", &self.email).on_input(Msg::EmailChanged),
 			text_input("Password", &self.password).on_input(Msg::PasswordChanged),
 			row![
 				button(text("Login")).on_press(Msg::Login),
-			]
-			.spacing(8),
-			text("Add Profile").size(20),
-			text_input("Name", &self.add_name).on_input(Msg::AddNameChanged),
-			text_input("Server", &self.add_server).on_input(Msg::AddServerChanged),
-			text_input("Remote ID (optional)", &self.add_remote_id).on_input(Msg::AddRemoteIdChanged),
-			checkbox("Split Tunnel", self.add_split_tunnel).on_toggle(Msg::AddSplitTunnelChanged),
-			text_input("DNS servers (comma-separated)", &self.add_dns).on_input(Msg::AddDnsChanged),
-			text_input("Username (optional)", &self.add_username).on_input(Msg::AddUsernameChanged),
-			row![
-				button(text("Add")).on_press(Msg::AddSubmit),
-				button(text("Remove")).on_press(Msg::Remove),
-			]
-			.spacing(8),
-			text("Credentials").size(20),
-			text_input("Username", &self.creds_username).on_input(Msg::SetCredsUsernameChanged),
-			text_input("Password", &self.creds_password).on_input(Msg::SetCredsPasswordChanged),
-			row![
-				button(text("Save Creds")).on_press(Msg::SetCredsSubmit),
 				button(text("Connect")).on_press(Msg::Connect),
-				button(text("Disconnect")).on_press(Msg::Disconnect),
 			]
 			.spacing(8),
 			text(&self.status_message),
@@ -402,11 +386,9 @@ impl Application for VpnApp {
 		.spacing(8)
 		.align_items(Alignment::Start);
 
-		let content = row![list.width(Length::FillPortion(2)), container(controls).width(Length::FillPortion(3)).padding(16)]
-			.spacing(12)
-			.align_items(Alignment::Start);
+		let content = container(controls).width(Length::Fill).padding(16);
 
-		container(content).padding(16).into()
+		content.into()
 	}
 }
 

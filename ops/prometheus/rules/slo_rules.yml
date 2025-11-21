@@ -1,0 +1,51 @@
+groups:
+  - name: availability_and_latency
+    interval: 30s
+    rules:
+      # Error ratio over 5m for HTTP requests (FastAPI default metrics or instrumentator)
+      - record: job:http_request_errors_total:rate5m
+        expr: |
+          sum by (job) (rate(http_requests_total{status=~"5..|4.."}[5m]))
+          /
+          sum by (job) (rate(http_requests_total[5m]))
+
+      - alert: HighErrorRate5m
+        expr: job:http_request_errors_total:rate5m{job=~"auth-api|directory-api|admin-api"} > 0.02
+        for: 10m
+        labels:
+          severity: page
+          team: sre
+        annotations:
+          summary: "High error rate ({{ $labels.job }})"
+          description: "5xx/4xx error ratio > 2% over 10m. Check service health and dependencies."
+          runbook_url: "file:///runbooks/http_error_rate.md"
+
+      # Latency 95th percentile over 5m
+      - record: job:http_request_duration_seconds:p95
+        expr: |
+          histogram_quantile(0.95, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+
+      - alert: HighLatencyP95
+        expr: job:http_request_duration_seconds:p95{job=~"auth-api|directory-api|admin-api"} > 0.5
+        for: 10m
+        labels:
+          severity: ticket
+          team: sre
+        annotations:
+          summary: "High latency P95 ({{ $labels.job }})"
+          description: "P95 latency above 500ms over 10m."
+          runbook_url: "file:///runbooks/high_latency.md"
+
+      # Instance down
+      - alert: InstanceDown
+        expr: up{job=~"auth-api|directory-api|admin-api"} == 0
+        for: 2m
+        labels:
+          severity: page
+          team: sre
+        annotations:
+          summary: "Instance down ({{ $labels.instance }})"
+          description: "Prometheus target is down for >2m."
+          runbook_url: "file:///runbooks/instance_down.md"
+
+

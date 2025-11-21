@@ -57,20 +57,45 @@ impl AuthApiClient {
 			return Err(CoreError::Other(format!("fetch profile http {}", resp.status())));
 		}
 		let text = resp.text().await.map_err(|e| CoreError::Other(format!("read profile: {e}")))?;
-		// Try JSON first; if not JSON, return minimal defaults.
+		// Try JSON first; if not JSON, parse as OpenVPN config.
 		match serde_json::from_str::<ServerProfile>(&text) {
 			Ok(p) => Ok(p),
-			Err(_) => Ok(ServerProfile {
-				name: Some("default".to_string()),
-				server: None,
-				remote_id: None,
-				username: None,
-				password: None,
-				dns: Vec::new(),
-				split_tunnel: None,
-				raw: Some(text),
-			}),
+			Err(_) => {
+				// Parse OpenVPN config format
+				let server = Self::parse_openvpn_remote(&text);
+				Ok(ServerProfile {
+					name: Some("default".to_string()),
+					server,
+					remote_id: None,
+					username: None,
+					password: None,
+					dns: Vec::new(),
+					split_tunnel: None,
+					raw: Some(text),
+				})
+			},
 		}
+	}
+
+	fn parse_openvpn_remote(config: &str) -> Option<String> {
+		for line in config.lines() {
+			let line = line.trim();
+			if line.starts_with("remote ") {
+				let parts: Vec<&str> = line.split_whitespace().collect();
+				if parts.len() >= 2 {
+					let host = parts[1];
+					let port = if parts.len() >= 3 { parts[2] } else { "1194" };
+					// For Windows IKEv2, we typically just need the host
+					// But if port is not 1194, include it
+					if port == "1194" {
+						return Some(host.to_string());
+					} else {
+						return Some(format!("{}:{}", host, port));
+					}
+				}
+			}
+		}
+		None
 	}
 }
 
@@ -82,9 +107,9 @@ struct LoginRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginResponse {
-	#[serde(rename = "AccessToken")]
+	#[serde(rename = "accessToken")]
 	pub access_token: String,
-	#[serde(rename = "RefreshToken")]
+	#[serde(rename = "refreshToken")]
 	pub refresh_token: String,
 }
 

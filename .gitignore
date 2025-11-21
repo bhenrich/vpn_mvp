@@ -54,4 +54,6 @@ logs/
 # Monitoring data
 monitoring/grafana/data/
 
+# Test artifacts
+.pytest-directory-api.db
 

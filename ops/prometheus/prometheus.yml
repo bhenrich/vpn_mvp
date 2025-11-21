@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - rules/*.yml
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+
+  - job_name: 'auth-api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['auth-api:8080']
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+    metric_relabel_configs:
+      # Drop any metric labels that could include PII by mistake (defense in depth)
+      - regex: '(user|user_id|email|subject|device_id)'
+        action: labeldrop
+
+  - job_name: 'directory-api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['directory-api:8081']
+    metric_relabel_configs:
+      - regex: '(user|user_id|email|subject|device_id)'
+        action: labeldrop
+
+  - job_name: 'admin-api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['admin-api:8082']
+    metric_relabel_configs:
+      - regex: '(user|user_id|email|subject|device_id)'
+        action: labeldrop
+
+

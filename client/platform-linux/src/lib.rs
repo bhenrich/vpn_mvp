@@ -1,9 +1,16 @@
-//! Linux-specific adapter crate (placeholder scaffolding).
-//! Real implementation will target NetworkManager (nmcli) and strongSwan (swanctl) backends.
+//! Linux-specific adapter crate.
+//! Contains:
+//! - NetworkManager and strongSwan adapters for legacy flows.
+//! - Linux TUN backend using `ip` for link management for the WireGuard core.
 
 use std::sync::Arc;
 
 use vpn_core::{CommandExecutor, ConnectionState, CoreError, ProfileStore, VpnAdapter, VpnProfile};
+
+pub mod tun_backend;
+pub mod firewall;
+pub mod dns;
+pub mod split;
 
 pub struct LinuxNmAdapter {
 	exec: Arc<dyn CommandExecutor>,

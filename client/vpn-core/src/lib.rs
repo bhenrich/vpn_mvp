@@ -9,6 +9,7 @@ pub mod exec;
 pub mod profiles;
 pub mod netauth;
 pub mod tokens;
+pub mod wg;
 
 pub use crate::types::*;
 pub use crate::traits::*;
@@ -18,6 +19,7 @@ pub use crate::exec::*;
 pub use crate::profiles::*;
 pub use crate::netauth::*;
 pub use crate::tokens::*;
+pub use crate::wg::*;
 
 
 

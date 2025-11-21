@@ -1,0 +1,88 @@
+name: Supply Chain - SBOM and Signing
+
+on:
+  push:
+    branches: [ main, develop, refactor/** ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CycloneDX tools (Python)
+        run: |
+          pip install --no-cache-dir cyclonedx-bom
+
+      - name: Generate Python SBOMs
+        run: |
+          set -e
+          for svc in services/auth-api services/directory-api services/admin-api; do
+            if [ -f "$svc/requirements.txt" ]; then
+              (cd "$svc" && cyclonedx-py --format json --output "../../sbom_${svc//\//_}.json" -r)
+            fi
+          done
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CycloneDX for Rust
+        run: cargo install cyclonedx-bom --locked
+
+      - name: Generate Rust SBOM (workspace)
+        run: cyclonedx-bom -o sbom_rust_workspace.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            sbom_*.json
+            sbom_rust_workspace.json
+
+  sign:
+    needs: sbom
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sboms
+          path: dist
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.0"
+
+      - name: Keyless sign SBOMs with OIDC
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -e
+          for f in dist/*.json; do
+            cosign sign-blob --yes --output-signature "$f.sig" "$f"
+          done
+
+      - name: Upload signed SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms-signed
+          path: dist/*
+
+

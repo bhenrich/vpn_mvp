@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>VPN</title>
+	<style>
+		body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #111; }
+		header { padding: 16px; background: #0b5fff; color: #fff; }
+		main { padding: 16px; max-width: 960px; margin: 0 auto; }
+		.card { border: 1px solid #eee; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+		label { display: block; margin: 8px 0 4px; }
+		input, select, button { padding: 8px; font-size: 14px; }
+		input, select { width: 100%; box-sizing: border-box; }
+		actions { display: flex; gap: 8px; }
+		.row { display: flex; gap: 12px; }
+		.row > * { flex: 1; }
+		.hidden { display: none; }
+		.status { font-weight: bold; }
+		.error { color: #d32f2f; font-size: 14px; margin-top: 8px; }
+		.success { color: #2e7d32; font-size: 14px; margin-top: 8px; }
+		.loading { opacity: 0.6; pointer-events: none; }
+		button:disabled { opacity: 0.6; cursor: not-allowed; }
+	</style>
+</head>
+<body>
+<header>
+	<h1>VPN</h1>
+</header>
+<main>
+	<section id="onboarding" class="card">
+		<h2>Welcome</h2>
+		<p>Privacy-first VPN. Please review telemetry preferences and GDPR disclosures.</p>
+		<details>
+			<summary>GDPR and privacy disclosures</summary>
+			<p>
+				We do not log traffic or per-flow metadata. Application logs exclude user identifiers.
+				Metrics are aggregate only (e.g., active sessions per region). You may request data export or deletion via the account portal.
+			</p>
+		</details>
+		<label>
+			<input type="checkbox" id="telemetry-consent" />
+			I consent to optional anonymous telemetry to improve the product.
+		</label>
+		<button id="onboarding-continue">Continue</button>
+	</section>
+
+	<section id="login" class="card hidden">
+		<h2>Login</h2>
+		<div class="card" style="margin: 0 0 16px 0; padding: 12px; background: #f7f9fc;">
+			<h3>Server</h3>
+			<label for="server-host">Server address</label>
+			<input id="server-host" type="text" placeholder="192.168.0.10" />
+			<p style="font-size: 12px; color: #555; margin-top: 4px;">
+				Enter the IP or hostname of the machine running the VPN backend (auth + directory APIs).
+				Leave empty to use the default <code>127.0.0.1</code> on this device.
+			</p>
+			<div id="server-message" class="hidden" style="margin-top: 8px;"></div>
+			<br />
+			<button id="server-save">Save server</button>
+		</div>
+		<div class="row">
+			<div>
+				<h3>Direct login</h3>
+				<label for="email">Email</label>
+				<input id="email" type="email" placeholder="you@example.com" />
+				<label for="password">Password</label>
+				<input id="password" type="password" placeholder="********" />
+				<label for="totp">TOTP (optional)</label>
+				<input id="totp" type="text" placeholder="123456" />
+				<div id="login-error" class="error hidden"></div>
+				<br />
+				<button id="login-submit">Sign in</button>
+			</div>
+			<div>
+				<h3>Device login</h3>
+				<p>This flow lets you authorize this device from another trusted device.</p>
+				<label for="user-hint">User hint (email)</label>
+				<input id="user-hint" type="email" placeholder="you@example.com" />
+				<div id="device-login-started" class="hidden">
+					<p style="margin-top: 12px;"><strong>Device code:</strong> <code id="device-code" style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px;"></code></p>
+					<p>Status: <span id="device-status">Waiting for authorization...</span></p>
+					<p style="font-size: 12px; color: #555;">Visit the device authorization page and enter this code. This window will automatically check for authorization.</p>
+				</div>
+				<div id="device-error" class="error hidden"></div>
+				<br />
+				<button id="device-start">Start device login</button>
+				<button id="device-poll" class="hidden">Check status</button>
+			</div>
+		</div>
+	</section>
+
+	<section id="regions" class="card hidden">
+		<h2>Select region and mode</h2>
+		<label for="region">Region</label>
+		<select id="region"></select>
+		<label for="mode">Mode</label>
+		<select id="mode">
+			<option value="single">Single-server</option>
+			<option value="multi">Multi-hop</option>
+		</select>
+		<div id="region-error" class="error hidden"></div>
+		<br />
+		<div>
+		<button id="save-region">Save</button>
+			<button id="logout-btn-regions" style="margin-left: 8px;">Logout</button>
+		</div>
+	</section>
+
+	<section id="status" class="card hidden">
+		<h2>Status</h2>
+		<p>App status: <span class="status" id="app-status">Unknown</span></p>
+		<p>Selected region: <span id="selected-region">None</span></p>
+		<p>Connection: <span class="status" id="connection-status">Disconnected</span></p>
+		<div id="connection-error" class="error hidden"></div>
+		<div id="connection-success" class="success hidden"></div>
+		<br />
+		<div>
+			<button id="bg-start">Connect</button>
+			<button id="bg-stop">Disconnect</button>
+			<button id="check-update">Check for updates</button>
+			<button id="logout-btn" style="margin-left: 8px;">Logout</button>
+		</div>
+	</section>
+</main>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
+
+

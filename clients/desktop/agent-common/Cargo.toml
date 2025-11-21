@@ -1,0 +1,15 @@
+[package]
+name = "agent-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", default-features = false, features = ["json"] }
+base64 = "0.22"
+desktop-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+vpn_core = { package = "vpn-core", path = "../../../client/vpn-core" }
+x25519-dalek = { version = "2", default-features = true, features = ["static_secrets"] }
+
+

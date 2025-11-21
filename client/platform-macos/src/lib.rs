@@ -17,6 +17,11 @@ impl MacosAdapter {
 	}
 }
 
+pub mod tun_backend;
+pub mod firewall;
+pub mod dns;
+pub mod split;
+
 #[async_trait::async_trait]
 impl VpnAdapter for MacosAdapter {
 	async fn init(&self) -> Result<(), CoreError> {

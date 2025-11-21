@@ -1,0 +1,185 @@
+name: Tauri Release (Signed + Updater)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+      TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+      TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend deps (if any)
+        working-directory: clients/desktop/ui
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Inject Tauri updater config (active+pubkey+endpoints)
+        run: |
+          set -e
+          CONF="clients/desktop/ui/tauri.conf.json"
+          if [ -z "${TAURI_UPDATER_PUBKEY:-}" ]; then
+            echo "TAURI_UPDATER_PUBKEY is required" >&2
+            exit 1
+          fi
+          REPO="${GITHUB_REPOSITORY}"
+          ENDPOINT="https://github.com/${REPO}/releases/latest/download/latest.json"
+          # Use jq to update JSON in place
+          jq --arg key "$TAURI_UPDATER_PUBKEY" --arg ep "$ENDPOINT" \
+            '.tauri.updater.active=true
+            | .tauri.updater.pubkey=$key
+            | .tauri.updater.endpoints=[$ep]' \
+            "$CONF" > "${CONF}.tmp"
+          mv "${CONF}.tmp" "$CONF"
+
+      - name: Build and Release (Tauri)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Desktop v${{ github.ref_name }}"
+          releaseBody: "Automated release with signed updater"
+          tauriScript: "npm"
+          projectPath: "clients/desktop/ui"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate update JSON (latest.json) and attach
+        run: |
+          # tauri-action handles generating and uploading latest.json by default in v0+
+          echo "Update manifest handled by tauri-action."
+
+      - name: Cosign release artifacts
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.0"
+
+      - name: Sign artifacts with Cosign (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -e
+          # Download release assets to dist and sign them
+          gh release download "${GITHUB_REF_NAME#refs/tags/}" -D dist
+          for f in dist/*; do
+            if [ -f "$f" ]; then
+              cosign sign-blob --yes --output-signature "$f.sig" "$f"
+            fi
+          done
+          gh release upload "${GITHUB_REF_NAME#refs/tags/}" dist/* --clobber
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+name: Tauri Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    env:
+      TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+      TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Set to 1 to enable notarization; requires Apple creds above
+      TAURI_SIGN: ${{ secrets.TAURI_SIGN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies (Linux only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Prebuild sidecar service (all platforms)
+        run: cargo build --release -p desktop-service
+      - name: Inject updater config (endpoints + pubkey)
+        working-directory: clients/desktop/ui
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install jq -y
+          fi
+          REPO="${{ github.repository }}"
+          ENDPOINT="https://github.com/${REPO}/releases/latest/download/latest.json"
+          PUBKEY="${{ secrets.TAURI_PUBLIC_KEY }}"
+          if [[ -z "$PUBKEY" ]]; then
+            echo "TAURI_PUBLIC_KEY secret missing"; exit 1
+          fi
+          cat tauri.conf.json | jq \
+            --arg endpoint "$ENDPOINT" \
+            --arg pubkey "$PUBKEY" \
+            '.tauri.updater.active=true | .tauri.updater.dialog=true | .tauri.updater.endpoints=[ $endpoint ] | .tauri.updater.pubkey=$pubkey' \
+            > tauri.conf.json.tmp
+          mv tauri.conf.json.tmp tauri.conf.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build and bundle Tauri app
+        working-directory: clients/desktop/ui
+        run: |
+          # Ensure the sidecar path in tauri.conf.json matches ../../service/target/release/desktop-service
+          tauri build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-desktop-${{ matrix.platform }}
+          path: |
+            clients/desktop/ui/src-tauri/target/release/bundle/**
+            clients/desktop/ui/src-tauri/target/release/*.dSYM.zip
+            clients/desktop/ui/src-tauri/target/release/*.symbols.zip
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            clients/desktop/ui/src-tauri/target/release/bundle/**/*
+            clients/desktop/ui/src-tauri/target/release/bundle/**/latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
