@@ -1,37 +1,45 @@
-Contributing Guidelines
-=======================
+# Contributing
+## Quick Start
 
-Thanks for contributing! This repository is being refactored into a monorepo per `PLAN.md`.
+1. **Install prerequisites:**  
+   - Docker & Docker Compose  
+   - Rust (stable)  
+   - Python 3.12+
 
-Development setup
------------------
-- Install Docker and Docker Compose
-- Rust (stable), Python 3.12
+2. **Clone the repository and bootstrap:**  
+   - Run `make bootstrap` to set up tools and hooks.
 
-Common commands
----------------
+3. **Service environment:**  
+   - Copy each `env.example` to `.env` before running services.
+   - Example:  
+     ```
+     cp services/auth-api/env.example services/auth-api/.env
+     ```
 
-```bash
-make build     # build all containers
-make up        # launch dev stack
-make down      # stop and remove dev stack
-make fmt       # rustfmt
-make lint      # ruff + clippy
-make test      # pytest + cargo test
-```
-
-Service environment
--------------------
-Each service provides an `env.example`. Copy to `.env` before running locally:
+## Useful Commands
 
 ```bash
-cp services/auth-api/env.example services/auth-api/.env
-cp services/directory-api/env.example services/directory-api/.env
-cp services/admin-api/env.example services/admin-api/.env
+make build     # Build all containers
+make up        # Start the dev stack
+make down      # Stop and remove dev stack
+make fmt       # Format Rust code
+make lint      # Run Python and Rust linters
+make test      # Run Python and Rust tests
 ```
 
-Legacy components
------------------
-The previous Go/OpenVPN stack under `server/` is deprecated and will be archived. The new stack uses Python (FastAPI) for the control plane and Rust (`wireguard-rs`) for the data plane.
+## Docs
+Full system, compliance, and security documentation lives in the [`docs/`](docs/INDEX.md) directory.  
+- Architecture, onboarding, and operational guides: [`docs/INDEX.md`](docs/INDEX.md)
+- Data Processing Addendum: [`docs/compliance/DPA.md`](docs/compliance/DPA.md)
+- Records of Processing Activities: [`docs/compliance/ROPA.md`](docs/compliance/ROPA.md)
+- Security threat model: [`docs/security/SECURITY_THREAT_MODEL.md`](docs/security/SECURITY_THREAT_MODEL.md)
 
+Please read relevant docs before submitting changes affecting compliance, data handling, or security-critical flows.
+
+
+## Notes
+
+- The legacy `server/` Go/OpenVPN implementation is deprecated.
+- Current stack: Python (FastAPI) for control plane, Rust/WireGuard for data plane.
+- Please document significant changes and follow code style with provided formatters/linters.
 
