@@ -1435,11 +1435,3 @@ test.describe('VPN Connection Flow', () => {
   });
 });
 ```
-
----
-
-For more information on client development and deployment, see:
-- [Development Setup Guide](../../CONTRIBUTING.md)
-- [Architecture Documentation](../architecture/ARCHITECTURE.md)
-- [API Documentation](../api/INDEX.md)
-- [Security Documentation](../security/)

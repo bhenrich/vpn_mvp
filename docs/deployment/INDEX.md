@@ -1577,11 +1577,3 @@ fi
 
 echo "🎉 Deployment validation completed successfully!"
 ```
-
----
-
-For additional deployment scenarios and advanced configurations, see:
-- [Infrastructure Documentation](../infra/INDEX.md)
-- [Operations Guide](../ops/INDEX.md)
-- [Security Documentation](../security/)
-- [Architecture Overview](../architecture/ARCHITECTURE.md)

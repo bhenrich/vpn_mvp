@@ -907,11 +907,3 @@ def log_audit_event(event_type, user_id, details):
     }
     audit_logger.info(json.dumps(audit_event))
 ```
-
----
-
-For detailed troubleshooting guides and emergency procedures, see:
-- [Runbooks Directory](../../ops/runbooks/)
-- [Infrastructure Documentation](../infra/INDEX.md)
-- [Security Documentation](../security/)
-- [Architecture Overview](../architecture/ARCHITECTURE.md)

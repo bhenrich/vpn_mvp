@@ -1390,11 +1390,3 @@ async def seed_database():
 if __name__ == "__main__":
     asyncio.run(seed_database())
 ```
-
----
-
-For more detailed information on specific development topics, see:
-- [Architecture Documentation](../architecture/ARCHITECTURE.md)
-- [API Documentation](../api/INDEX.md)
-- [Testing Documentation](../../TESTING.md)
-- [Tools Documentation](../tools/INDEX.md)

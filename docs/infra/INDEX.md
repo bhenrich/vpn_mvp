@@ -913,11 +913,3 @@ data:
       }
     }
 ```
-
----
-
-For operational procedures and troubleshooting, see:
-- [Operations Guide](../ops/INDEX.md)
-- [Security Documentation](../security/)
-- [Development Setup](../../CONTRIBUTING.md)
-- [Architecture Overview](../architecture/ARCHITECTURE.md)
